@@ -52,7 +52,7 @@ export default function CTCard({ content, renderWidth }: CTCardProps) {
         <div
           className="absolute top-0 left-0 w-full"
           style={{
-            height: renderHeight * (2 / 3), // 가이드: 348의 2/3까지
+            height: renderHeight * (2 / 3),
             background:
               content.bgTreatment.direction === "dark"
                 ? `linear-gradient(to bottom, ${content.bgTreatment.stops

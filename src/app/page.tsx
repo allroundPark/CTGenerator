@@ -3,6 +3,7 @@
 import { useState, useRef } from "react";
 import { CTContent } from "@/types/ct";
 import DeviceViewer from "@/components/DeviceViewer";
+import { exportCtPng } from "@/lib/exportPng";
 
 const DEFAULT_CONTENT: CTContent = {
   id: "demo-001",
@@ -49,10 +50,10 @@ function TextInput({
   const bytes = getByteLength(value);
   return (
     <div>
-      <div className="flex items-center justify-between mb-0.5">
-        <label className="text-[11px] text-gray-400">{label}</label>
+      <div className="flex items-center justify-between mb-1">
+        <label className="text-xs text-gray-400">{label}</label>
         <span
-          className={`text-[11px] ${bytes > 34 ? "text-red-500 font-semibold" : "text-gray-300"}`}
+          className={`text-xs ${bytes > 34 ? "text-red-500 font-semibold" : "text-gray-300"}`}
         >
           {bytes}/34
         </span>
@@ -60,7 +61,7 @@ function TextInput({
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full border border-gray-200 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+        className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
         placeholder={placeholder}
       />
     </div>
@@ -115,15 +116,18 @@ export default function Home() {
       style={{ backgroundColor: "#f5f5f5" }}
     >
       {/* 헤더 */}
-      <header className="bg-white border-b border-gray-200 px-6 py-2 shrink-0">
+      <header className="bg-white border-b border-gray-200 px-6 py-3 shrink-0">
         <div className="max-w-[1400px] mx-auto flex items-center justify-between">
-          <h1 className="text-sm font-bold text-gray-900">
+          <h1 className="text-base font-bold text-gray-900">
             CT Generator
-            <span className="ml-2 text-[11px] font-normal text-gray-400">
+            <span className="ml-2 text-xs font-normal text-gray-400">
               041
             </span>
           </h1>
-          <button className="px-3 py-1 bg-gray-900 text-white text-xs rounded-md hover:bg-gray-800 transition-colors">
+          <button
+            onClick={() => exportCtPng(content)}
+            className="px-4 py-1.5 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-800 transition-colors"
+          >
             내보내기 (PNG)
           </button>
         </div>
@@ -139,7 +143,7 @@ export default function Home() {
               <div className="flex-1 space-y-3">
                 {/* 좌상단 텍스트 */}
                 <section className="bg-white rounded-lg p-3 shadow-sm border border-gray-100">
-                  <h2 className="text-xs font-semibold text-gray-600 mb-2">
+                  <h2 className="text-sm font-semibold text-gray-600 mb-2">
                     좌상단 텍스트
                   </h2>
                   <div className="space-y-2">
@@ -172,7 +176,7 @@ export default function Home() {
 
                 {/* 좌하단 텍스트 */}
                 <section className="bg-white rounded-lg p-3 shadow-sm border border-gray-100">
-                  <h2 className="text-xs font-semibold text-gray-600 mb-2">
+                  <h2 className="text-sm font-semibold text-gray-600 mb-2">
                     좌하단 텍스트
                   </h2>
                   <div className="space-y-2">
@@ -197,7 +201,7 @@ export default function Home() {
 
                 {/* 텍스트 색상 */}
                 <section className="bg-white rounded-lg p-3 shadow-sm border border-gray-100">
-                  <h2 className="text-xs font-semibold text-gray-600 mb-2">
+                  <h2 className="text-sm font-semibold text-gray-600 mb-2">
                     텍스트 색상
                   </h2>
                   <div className="flex gap-1.5">
@@ -205,7 +209,7 @@ export default function Home() {
                       onClick={() =>
                         setContent((prev) => ({ ...prev, textColor: "BK" }))
                       }
-                      className={`flex-1 py-1.5 text-sm rounded-md border transition-colors ${
+                      className={`flex-1 py-2 text-base rounded-md border transition-colors ${
                         content.textColor === "BK"
                           ? "border-gray-900 bg-white text-black font-semibold"
                           : "border-gray-200 text-gray-400"
@@ -217,7 +221,7 @@ export default function Home() {
                       onClick={() =>
                         setContent((prev) => ({ ...prev, textColor: "WT" }))
                       }
-                      className={`flex-1 py-1.5 text-sm rounded-md border transition-colors ${
+                      className={`flex-1 py-2 text-base rounded-md border transition-colors ${
                         content.textColor === "WT"
                           ? "border-gray-900 bg-gray-900 text-white font-semibold"
                           : "border-gray-200 bg-gray-100 text-gray-400"
@@ -233,7 +237,7 @@ export default function Home() {
               <div className="flex-1 space-y-3">
                 {/* 이미지 업로드 */}
                 <section className="bg-white rounded-lg p-3 shadow-sm border border-gray-100">
-                  <h2 className="text-xs font-semibold text-gray-600 mb-2">
+                  <h2 className="text-sm font-semibold text-gray-600 mb-2">
                     이미지
                   </h2>
                   <input
@@ -267,19 +271,19 @@ export default function Home() {
                       className="w-full h-24 border-2 border-dashed border-gray-200 rounded-md flex flex-col items-center justify-center text-gray-400 hover:border-gray-400 transition-colors"
                     >
                       <span className="text-xl mb-0.5">+</span>
-                      <span className="text-[11px]">이미지 업로드</span>
+                      <span className="text-xs">이미지 업로드</span>
                     </button>
                   )}
                 </section>
 
                 {/* 이미지 정렬 */}
                 <section className="bg-white rounded-lg p-3 shadow-sm border border-gray-100">
-                  <h2 className="text-xs font-semibold text-gray-600 mb-2">
+                  <h2 className="text-sm font-semibold text-gray-600 mb-2">
                     이미지 정렬
                   </h2>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="text-[11px] text-gray-400 mb-0.5 block">
+                      <label className="text-xs text-gray-400 mb-0.5 block">
                         가로
                       </label>
                       <select
@@ -295,7 +299,7 @@ export default function Home() {
                       </select>
                     </div>
                     <div>
-                      <label className="text-[11px] text-gray-400 mb-0.5 block">
+                      <label className="text-xs text-gray-400 mb-0.5 block">
                         세로
                       </label>
                       <select
@@ -315,7 +319,7 @@ export default function Home() {
 
                 {/* 배경 처리 */}
                 <section className="bg-white rounded-lg p-3 shadow-sm border border-gray-100">
-                  <h2 className="text-xs font-semibold text-gray-600 mb-2">
+                  <h2 className="text-sm font-semibold text-gray-600 mb-2">
                     배경 처리
                   </h2>
                   <div className="flex gap-1.5 mb-2">
@@ -323,7 +327,7 @@ export default function Home() {
                       <button
                         key={type}
                         onClick={() => updateBgTreatment(type)}
-                        className={`flex-1 py-1 text-[11px] rounded-md transition-colors ${
+                        className={`flex-1 py-1.5 text-xs rounded-md transition-colors ${
                           content.bgTreatment.type === type
                             ? "bg-gray-900 text-white"
                             : "bg-gray-100 text-gray-500"
@@ -355,7 +359,7 @@ export default function Home() {
                         }
                         className="w-6 h-6 rounded border-0 cursor-pointer"
                       />
-                      <span className="text-[11px] text-gray-400 font-mono">
+                      <span className="text-xs text-gray-400 font-mono">
                         {content.bgTreatment.color.toUpperCase()}
                       </span>
                     </div>
@@ -378,7 +382,7 @@ export default function Home() {
                               },
                             }))
                           }
-                          className={`flex-1 py-1 text-[11px] rounded-md ${
+                          className={`flex-1 py-1.5 text-xs rounded-md ${
                             content.bgTreatment.type === "gradient" &&
                             content.bgTreatment.direction === dir
                               ? dir === "dark"
