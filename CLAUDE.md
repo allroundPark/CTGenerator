@@ -38,9 +38,18 @@ DeviceViewer가 실제 앱 스크린샷(public/assets/dark-375.png, light-375.pn
 
 exportPng.ts는 Canvas API로 **이미지+배경처리만** 3x(1005×1044) PNG 추출. 텍스트/하트/로고는 앱에서 렌더하므로 PNG에 포함하지 않음. 라운드 클리핑 없이 직사각형으로 내보냄. 파일명: `YYMMDD_CT041_BK|WT@3x.png`.
 
-## Pending Features
+## TODO — 구현 예정 기능
 
-- 로고/작은 이미지 주제부 배치, 큰 이미지 드래그 이동
-- AI 문구 피드백, SVG 아이콘 생성
-- 여러 이미지 합성 (Gemini Nano/Banana/Pro)
-- Lottie JSON 모션 내보내기
+### 이미지 배치/조작
+- [ ] 로고/작은 이미지가 올 때 카드 주제부(중앙)에 자동 배치
+- [ ] 큰 이미지 드래그/이동으로 최적 구도 찾기 (크롭 위치 조정)
+
+### AI 기능
+- [ ] 문구 피드백: AI가 텍스트 개선안 제안
+- [ ] 아이콘 기반 SVG 생성: 사용자가 원할 때 AI로 아이콘 생성
+- [ ] 여러 이미지 합성: Gemini Nano/Banana/Pro 활용하여 합성 이미지 제작
+
+### 내보내기
+- [ ] CMS용 PNG @3x (현재 구현됨)
+- [ ] 모션용 Lottie JSON 내보내기
+- [ ] 파일명 자동생성 규칙 확장
