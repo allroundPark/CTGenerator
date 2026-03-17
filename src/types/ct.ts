@@ -41,3 +41,12 @@ export const DEVICE_PRESETS = [
 ] as const;
 
 export type DevicePreset = (typeof DEVICE_PRESETS)[number];
+
+// 채팅 메시지
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  variants?: CTContent[];
+  timestamp: number;
+}

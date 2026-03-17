@@ -19,7 +19,7 @@ const MOCKUP = {
 type Theme = "dark" | "light";
 
 export default function DeviceViewer({ content }: DeviceViewerProps) {
-  const [theme, setTheme] = useState<Theme>("dark");
+  const [theme, setTheme] = useState<Theme>("light");
 
   // 뷰어에 표시할 스케일 (화면에 적당한 크기로)
   const displayScale = 0.85;

@@ -1,412 +1,191 @@
 "use client";
 
-import { useState, useRef } from "react";
-import { CTContent } from "@/types/ct";
-import DeviceViewer from "@/components/DeviceViewer";
-import { exportCtPng } from "@/lib/exportPng";
+import { useState } from "react";
+import { CTContent, ChatMessage } from "@/types/ct";
+import ChatInput from "@/components/ChatInput";
+import ChatPanel from "@/components/ChatPanel";
+import VariantCanvas from "@/components/VariantCanvas";
+import ManualEditor from "@/components/ManualEditor";
 
-const DEFAULT_CONTENT: CTContent = {
-  id: "demo-001",
-  label: "일이삼사오육칠팔구십일이",
-  titleLine1: "일이삼사오육칠팔구십일이",
-  titleLine2: "일이삼사오육칠팔구십일이",
-  subLine1: "일이삼사오육칠팔구십일이",
-  subLine2: "일이삼사오육칠팔구십일이",
-  imageUrl: "",
-  imageConstraint: { fit: "cover", alignX: "center", alignY: "center" },
-  textColor: "WT",
-  bgTreatment: {
-    type: "gradient",
-    direction: "dark",
-    stops: [
-      { position: 0, opacity: 0.6 },
-      { position: 60, opacity: 0.3 },
-      { position: 100, opacity: 0 },
-    ],
-  },
-};
-
-/** 34byte 체크 (한글 2byte, 영문/숫자 1byte) */
-function getByteLength(str: string): number {
-  let bytes = 0;
-  for (const ch of str.replace(/\n/g, "")) {
-    bytes += ch.charCodeAt(0) > 127 ? 2 : 1;
-  }
-  return bytes;
-}
-
-/** 컴팩트 텍스트 인풋 + byte 카운터 */
-function TextInput({
-  label,
-  value,
-  onChange,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder: string;
-}) {
-  const bytes = getByteLength(value);
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-1">
-        <label className="text-xs text-gray-400">{label}</label>
-        <span
-          className={`text-xs ${bytes > 34 ? "text-red-500 font-semibold" : "text-gray-300"}`}
-        >
-          {bytes}/34
-        </span>
-      </div>
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-        placeholder={placeholder}
-      />
-    </div>
-  );
-}
+type Mode = "manual" | "chat";
 
 export default function Home() {
-  const [content, setContent] = useState<CTContent>(DEFAULT_CONTENT);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [mode, setMode] = useState<Mode>("chat");
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const url = URL.createObjectURL(file);
-    setContent((prev) => ({ ...prev, imageUrl: url }));
-  };
+  // 채팅 모드 상태
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [variants, setVariants] = useState<CTContent[]>([]);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const updateConstraint = (key: "alignX" | "alignY", value: string) => {
-    setContent((prev) => ({
-      ...prev,
-      imageConstraint: { ...prev.imageConstraint, [key]: value },
-    }));
-  };
+  const hasCanvas = variants.length > 0;
 
-  const updateBgTreatment = (type: "none" | "solid" | "gradient") => {
-    if (type === "none") {
-      setContent((prev) => ({ ...prev, bgTreatment: { type: "none" } }));
-    } else if (type === "solid") {
-      setContent((prev) => ({
-        ...prev,
-        bgTreatment: { type: "solid", color: "#5B6B7B", height: 140 },
+  const handleSend = async (text: string, image?: File) => {
+    // 이미지가 있으면 objectURL 생성
+    const imageUrl = image ? URL.createObjectURL(image) : "";
+
+    const userMsg: ChatMessage = {
+      id: `user-${Date.now()}`,
+      role: "user",
+      content: image ? `${text}\n[이미지 첨부됨]` : text,
+      timestamp: Date.now(),
+    };
+    setMessages((prev) => [...prev, userMsg]);
+    setIsLoading(true);
+
+    try {
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: text,
+          currentVariants: variants.length > 0 ? variants : undefined,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "서버 오류" }));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      const newVariants: CTContent[] = data.variants.map((v: CTContent) => ({
+        ...v,
+        imageUrl: imageUrl || v.imageUrl,
       }));
-    } else {
-      setContent((prev) => ({
-        ...prev,
-        bgTreatment: {
-          type: "gradient",
-          direction: "dark" as const,
-          stops: [
-            { position: 0, opacity: 0.6 },
-            { position: 60, opacity: 0.3 },
-            { position: 100, opacity: 0 },
-          ],
-        },
-      }));
+
+      setVariants(newVariants);
+      setSelectedIndex(0);
+
+      const hasImg = newVariants.some((v) => v.imageUrl);
+      const assistantContent = hasImg
+        ? "3가지 안을 만들었어요. 확인해보세요!"
+        : "3가지 안을 만들었어요!\n\n배경 이미지가 아직 없는데,\n• 이미지를 첨부해주시거나\n• \"이미지도 생성해줘\"라고 말씀해주세요.";
+
+      const assistantMsg: ChatMessage = {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        content: assistantContent,
+        variants: newVariants,
+        timestamp: Date.now(),
+      };
+      setMessages((prev) => [...prev, assistantMsg]);
+    } catch (e) {
+      const errorMsg: ChatMessage = {
+        id: `error-${Date.now()}`,
+        role: "assistant",
+        content: `오류가 발생했어요: ${e instanceof Error ? e.message : "알 수 없는 오류"}`,
+        timestamp: Date.now(),
+      };
+      setMessages((prev) => [...prev, errorMsg]);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
-    <div
-      className="h-screen overflow-hidden flex flex-col"
-      style={{ backgroundColor: "#f5f5f5" }}
-    >
-      {/* 헤더 */}
-      <header className="bg-white border-b border-gray-200 px-6 py-3 shrink-0">
-        <div className="max-w-[1400px] mx-auto flex items-center justify-between">
-          <h1 className="text-base font-bold text-gray-900">
-            CT Generator
-            <span className="ml-2 text-xs font-normal text-gray-400">
-              041
+    <div className="h-screen flex bg-gray-50 overflow-hidden">
+      {/* 좌측 사이드바 */}
+      <Sidebar mode={mode} onModeChange={setMode} />
+
+      {/* 메인 영역 */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* 헤더 */}
+        <header className="bg-white border-b border-gray-200 px-6 py-2.5 shrink-0">
+          <div className="flex items-center">
+            <span className="text-sm font-bold text-gray-900">
+              CT Generator
+              <span className="ml-1.5 text-xs font-normal text-gray-400">041</span>
             </span>
-          </h1>
-          <button
-            onClick={() => exportCtPng(content)}
-            className="px-4 py-1.5 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-800 transition-colors"
-          >
-            내보내기 (PNG)
-          </button>
-        </div>
-      </header>
+          </div>
+        </header>
 
-      {/* 메인: 2컬럼 레이아웃 (편집 패널 | 디바이스 뷰어) */}
-      <main className="flex-1 overflow-hidden">
-        <div className="max-w-[1400px] mx-auto h-full flex gap-5 px-5 py-4">
-          {/* 좌측: 텍스트 + 이미지 컨트롤 (2 서브컬럼) */}
-          <div className="w-[520px] shrink-0 overflow-y-auto">
-            <div className="flex gap-3">
-              {/* 서브컬럼 1: 텍스트 편집 */}
-              <div className="flex-1 space-y-3">
-                {/* 좌상단 텍스트 */}
-                <section className="bg-white rounded-lg p-3 shadow-sm border border-gray-100">
-                  <h2 className="text-sm font-semibold text-gray-600 mb-2">
-                    좌상단 텍스트
-                  </h2>
-                  <div className="space-y-2">
-                    <TextInput
-                      label="라벨 (14/20)"
-                      value={content.label}
-                      onChange={(v) =>
-                        setContent((prev) => ({ ...prev, label: v }))
-                      }
-                      placeholder="라벨..."
-                    />
-                    <TextInput
-                      label="타이틀 1줄 (24/32)"
-                      value={content.titleLine1}
-                      onChange={(v) =>
-                        setContent((prev) => ({ ...prev, titleLine1: v }))
-                      }
-                      placeholder="타이틀 1줄..."
-                    />
-                    <TextInput
-                      label="타이틀 2줄 (24/32)"
-                      value={content.titleLine2}
-                      onChange={(v) =>
-                        setContent((prev) => ({ ...prev, titleLine2: v }))
-                      }
-                      placeholder="타이틀 2줄..."
-                    />
-                  </div>
-                </section>
-
-                {/* 좌하단 텍스트 */}
-                <section className="bg-white rounded-lg p-3 shadow-sm border border-gray-100">
-                  <h2 className="text-sm font-semibold text-gray-600 mb-2">
-                    좌하단 텍스트
-                  </h2>
-                  <div className="space-y-2">
-                    <TextInput
-                      label="서브 1줄 (14/20)"
-                      value={content.subLine1}
-                      onChange={(v) =>
-                        setContent((prev) => ({ ...prev, subLine1: v }))
-                      }
-                      placeholder="서브 1줄..."
-                    />
-                    <TextInput
-                      label="서브 2줄 (14/20)"
-                      value={content.subLine2}
-                      onChange={(v) =>
-                        setContent((prev) => ({ ...prev, subLine2: v }))
-                      }
-                      placeholder="서브 2줄..."
-                    />
-                  </div>
-                </section>
-
-                {/* 텍스트 색상 */}
-                <section className="bg-white rounded-lg p-3 shadow-sm border border-gray-100">
-                  <h2 className="text-sm font-semibold text-gray-600 mb-2">
-                    텍스트 색상
-                  </h2>
-                  <div className="flex gap-1.5">
-                    <button
-                      onClick={() =>
-                        setContent((prev) => ({ ...prev, textColor: "BK" }))
-                      }
-                      className={`flex-1 py-2 text-base rounded-md border transition-colors ${
-                        content.textColor === "BK"
-                          ? "border-gray-900 bg-white text-black font-semibold"
-                          : "border-gray-200 text-gray-400"
-                      }`}
-                    >
-                      BK
-                    </button>
-                    <button
-                      onClick={() =>
-                        setContent((prev) => ({ ...prev, textColor: "WT" }))
-                      }
-                      className={`flex-1 py-2 text-base rounded-md border transition-colors ${
-                        content.textColor === "WT"
-                          ? "border-gray-900 bg-gray-900 text-white font-semibold"
-                          : "border-gray-200 bg-gray-100 text-gray-400"
-                      }`}
-                    >
-                      WT
-                    </button>
-                  </div>
-                </section>
+        {/* 콘텐츠 */}
+        <div className="flex-1 overflow-hidden">
+          {mode === "manual" ? (
+            <ManualEditor key={selectedIndex} initialContent={variants[selectedIndex]} />
+          ) : !hasCanvas && messages.length === 0 ? (
+            /* 채팅 Phase 1: 인풋만 */
+            <div className="h-full flex flex-col items-center justify-center px-4">
+              <div className="mb-8 text-center">
+                <h1 className="text-2xl font-bold text-gray-900 mb-2">CT Generator</h1>
+                <p className="text-sm text-gray-400">콘텐츠스레드 카드를 만들어보세요</p>
               </div>
-
-              {/* 서브컬럼 2: 이미지 컨트롤 */}
-              <div className="flex-1 space-y-3">
-                {/* 이미지 업로드 */}
-                <section className="bg-white rounded-lg p-3 shadow-sm border border-gray-100">
-                  <h2 className="text-sm font-semibold text-gray-600 mb-2">
-                    이미지
-                  </h2>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageUpload}
-                    className="hidden"
-                  />
-                  {content.imageUrl ? (
-                    <div className="relative">
-                      <img
-                        src={content.imageUrl}
-                        alt="uploaded"
-                        className="w-full h-24 object-cover rounded-md"
-                      />
-                      <button
-                        onClick={() => {
-                          setContent((prev) => ({ ...prev, imageUrl: "" }));
-                          if (fileInputRef.current)
-                            fileInputRef.current.value = "";
-                        }}
-                        className="absolute top-1 right-1 bg-black/60 text-white rounded-full w-5 h-5 flex items-center justify-center text-[10px]"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="w-full h-24 border-2 border-dashed border-gray-200 rounded-md flex flex-col items-center justify-center text-gray-400 hover:border-gray-400 transition-colors"
-                    >
-                      <span className="text-xl mb-0.5">+</span>
-                      <span className="text-xs">이미지 업로드</span>
-                    </button>
-                  )}
-                </section>
-
-                {/* 이미지 정렬 */}
-                <section className="bg-white rounded-lg p-3 shadow-sm border border-gray-100">
-                  <h2 className="text-sm font-semibold text-gray-600 mb-2">
-                    이미지 정렬
-                  </h2>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-xs text-gray-400 mb-0.5 block">
-                        가로
-                      </label>
-                      <select
-                        value={content.imageConstraint.alignX}
-                        onChange={(e) =>
-                          updateConstraint("alignX", e.target.value)
-                        }
-                        className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-sm"
-                      >
-                        <option value="left">Left</option>
-                        <option value="center">Center</option>
-                        <option value="right">Right</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-400 mb-0.5 block">
-                        세로
-                      </label>
-                      <select
-                        value={content.imageConstraint.alignY}
-                        onChange={(e) =>
-                          updateConstraint("alignY", e.target.value)
-                        }
-                        className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-sm"
-                      >
-                        <option value="top">Top</option>
-                        <option value="center">Center</option>
-                        <option value="bottom">Bottom</option>
-                      </select>
-                    </div>
-                  </div>
-                </section>
-
-                {/* 배경 처리 */}
-                <section className="bg-white rounded-lg p-3 shadow-sm border border-gray-100">
-                  <h2 className="text-sm font-semibold text-gray-600 mb-2">
-                    배경 처리
-                  </h2>
-                  <div className="flex gap-1.5 mb-2">
-                    {(["none", "gradient", "solid"] as const).map((type) => (
-                      <button
-                        key={type}
-                        onClick={() => updateBgTreatment(type)}
-                        className={`flex-1 py-1.5 text-xs rounded-md transition-colors ${
-                          content.bgTreatment.type === type
-                            ? "bg-gray-900 text-white"
-                            : "bg-gray-100 text-gray-500"
-                        }`}
-                      >
-                        {type === "none"
-                          ? "없음"
-                          : type === "gradient"
-                            ? "그라데이션"
-                            : "솔리드"}
-                      </button>
-                    ))}
-                  </div>
-
-                  {content.bgTreatment.type === "solid" && (
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="color"
-                        value={content.bgTreatment.color}
-                        onChange={(e) =>
-                          setContent((prev) => ({
-                            ...prev,
-                            bgTreatment: {
-                              type: "solid" as const,
-                              color: e.target.value,
-                              height: 140,
-                            },
-                          }))
-                        }
-                        className="w-6 h-6 rounded border-0 cursor-pointer"
-                      />
-                      <span className="text-xs text-gray-400 font-mono">
-                        {content.bgTreatment.color.toUpperCase()}
-                      </span>
-                    </div>
-                  )}
-
-                  {content.bgTreatment.type === "gradient" && (
-                    <div className="flex gap-1.5">
-                      {(["dark", "light"] as const).map((dir) => (
-                        <button
-                          key={dir}
-                          onClick={() =>
-                            setContent((prev) => ({
-                              ...prev,
-                              bgTreatment: {
-                                ...(prev.bgTreatment as Extract<
-                                  typeof prev.bgTreatment,
-                                  { type: "gradient" }
-                                >),
-                                direction: dir,
-                              },
-                            }))
-                          }
-                          className={`flex-1 py-1.5 text-xs rounded-md ${
-                            content.bgTreatment.type === "gradient" &&
-                            content.bgTreatment.direction === dir
-                              ? dir === "dark"
-                                ? "bg-gray-800 text-white"
-                                : "bg-gray-200 text-gray-800"
-                              : "bg-gray-100"
-                          }`}
-                        >
-                          {dir === "dark" ? "어두운 톤" : "밝은 톤"}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </section>
+              <div className="w-full max-w-lg">
+                <ChatInput onSubmit={handleSend} disabled={isLoading} large autoFocus />
+              </div>
+              <div className="mt-6 flex flex-wrap justify-center gap-2">
+                {["3월 적금 이벤트", "신용카드 혜택 안내", "대출 금리 인하"].map((example) => (
+                  <button
+                    key={example}
+                    onClick={() => handleSend(example)}
+                    className="px-3 py-1.5 text-xs text-gray-500 bg-white border border-gray-200 rounded-full hover:bg-gray-100 transition-colors"
+                  >
+                    {example}
+                  </button>
+                ))}
               </div>
             </div>
-          </div>
-
-          {/* 우측: 디바이스 뷰어 */}
-          <div className="flex-1 flex items-center justify-center">
-            <DeviceViewer content={content} />
-          </div>
+          ) : (
+            /* 채팅 Phase 2: 좌 채팅 | 우 캔버스 */
+            <div className="h-full flex">
+              <div className="w-[400px] shrink-0 border-r border-gray-200 bg-white">
+                <ChatPanel messages={messages} onSend={handleSend} isLoading={isLoading} />
+              </div>
+              <div className="flex-1 overflow-hidden">
+                {hasCanvas ? (
+                  <VariantCanvas
+                    variants={variants}
+                    selectedIndex={selectedIndex}
+                    onSelect={setSelectedIndex}
+                  />
+                ) : (
+                  <div className="h-full flex items-center justify-center text-gray-400 text-sm">
+                    생성 중...
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
-      </main>
+      </div>
+    </div>
+  );
+}
+
+function Sidebar({ mode, onModeChange }: { mode: Mode; onModeChange: (m: Mode) => void }) {
+  return (
+    <div className="w-14 bg-white border-r border-gray-200 flex flex-col items-center py-4 gap-2 shrink-0">
+      {/* 수동 편집 */}
+      <button
+        onClick={() => onModeChange("manual")}
+        title="수동 편집"
+        className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors ${
+          mode === "manual"
+            ? "bg-gray-900 text-white"
+            : "text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+        }`}
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+        </svg>
+      </button>
+
+      {/* AI 채팅 */}
+      <button
+        onClick={() => onModeChange("chat")}
+        title="AI 채팅"
+        className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors ${
+          mode === "chat"
+            ? "bg-gray-900 text-white"
+            : "text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+        }`}
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
+      </button>
     </div>
   );
 }
