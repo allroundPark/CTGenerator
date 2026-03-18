@@ -1,11 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { CTContent, CT_BASE_WIDTH, CT_BASE_HEIGHT } from "@/types/ct";
+import { CTContent, CTTextField, CT_BASE_WIDTH, CT_BASE_HEIGHT } from "@/types/ct";
 import CTCard from "./CTCard";
 
 interface DeviceViewerProps {
   content: CTContent;
+  onFieldClick?: (field: CTTextField, rect: DOMRect) => void;
+  onImageDrag?: (customX: number, customY: number) => void;
+  /** 모바일에서 축소 스케일 (기본 0.85) */
+  scale?: number;
 }
 
 // 목업 이미지 기준 (1x = 375x812)
@@ -18,11 +22,10 @@ const MOCKUP = {
 
 type Theme = "dark" | "light";
 
-export default function DeviceViewer({ content }: DeviceViewerProps) {
+export default function DeviceViewer({ content, onFieldClick, onImageDrag, scale }: DeviceViewerProps) {
   const [theme, setTheme] = useState<Theme>("light");
 
-  // 뷰어에 표시할 스케일 (화면에 적당한 크기로)
-  const displayScale = 0.85;
+  const displayScale = scale ?? 0.85;
   const displayWidth = MOCKUP.width * displayScale;
   const displayHeight = MOCKUP.height * displayScale;
 
@@ -75,6 +78,8 @@ export default function DeviceViewer({ content }: DeviceViewerProps) {
           <CTCard
             content={content}
             renderWidth={MOCKUP.ct.w * displayScale}
+            onFieldClick={onFieldClick}
+            onImageDrag={onImageDrag}
           />
         </div>
       </div>

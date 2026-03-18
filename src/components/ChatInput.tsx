@@ -100,7 +100,7 @@ export default function ChatInput({
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={disabled}
-          className={`shrink-0 text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-30 ${
+          className={`shrink-0 text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-30 min-w-[44px] min-h-[44px] flex items-center justify-center ${
             large ? "p-1" : "p-0.5"
           }`}
           title="이미지 첨부"
@@ -127,7 +127,7 @@ export default function ChatInput({
         <button
           onClick={handleSubmit}
           disabled={disabled || (!value.trim() && !imageFile)}
-          className={`shrink-0 rounded-lg bg-gray-900 text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-800 ${
+          className={`shrink-0 rounded-lg bg-gray-900 text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-800 min-h-[44px] ${
             large ? "px-4 py-2 text-sm" : "px-3 py-1.5 text-xs"
           }`}
         >

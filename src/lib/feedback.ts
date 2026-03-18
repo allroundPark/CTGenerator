@@ -91,3 +91,51 @@ export function checkContent(content: CTContent): Feedback[] {
 
   return results;
 }
+
+/** 명암비/가독성 문제 자동 교정 — 수정된 CTContent 반환 */
+export function autoFixContrast(content: CTContent): { fixed: CTContent; changes: string[] } {
+  const changes: string[] = [];
+  let fixed = { ...content };
+
+  // 1. 솔리드 배경 명암비 부족 → 텍스트색 변경
+  if (fixed.bgTreatment.type === "solid") {
+    const recommended = recommendTextColor(fixed.bgTreatment.color);
+    if (fixed.textColor !== recommended) {
+      fixed = { ...fixed, textColor: recommended };
+      changes.push(`텍스트 색상을 ${recommended}로 변경`);
+    }
+  }
+
+  // 2. 그라데이션 + 텍스트색 불일치 → 텍스트색 변경
+  if (fixed.bgTreatment.type === "gradient") {
+    const dir = fixed.bgTreatment.direction;
+    if (dir === "dark" && fixed.textColor === "BK") {
+      fixed = { ...fixed, textColor: "WT" };
+      changes.push("어두운 그라데이션에 맞게 텍스트를 WT로 변경");
+    }
+    if (dir === "light" && fixed.textColor === "WT") {
+      fixed = { ...fixed, textColor: "BK" };
+      changes.push("밝은 그라데이션에 맞게 텍스트를 BK로 변경");
+    }
+  }
+
+  // 3. 이미지 있는데 배경 처리 없음 → dark 그라데이션 자동 추가
+  if (fixed.imageUrl && fixed.bgTreatment.type === "none") {
+    fixed = {
+      ...fixed,
+      textColor: "WT",
+      bgTreatment: {
+        type: "gradient",
+        direction: "dark",
+        stops: [
+          { position: 0, opacity: 0.6 },
+          { position: 60, opacity: 0.3 },
+          { position: 100, opacity: 0 },
+        ],
+      },
+    };
+    changes.push("가독성을 위해 어두운 그라데이션 + WT 텍스트 적용");
+  }
+
+  return { fixed, changes };
+}

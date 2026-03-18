@@ -20,6 +20,9 @@ export interface ImageConstraint {
   // 이미지 정렬 (가로, 세로)
   alignX: "left" | "center" | "right";
   alignY: "top" | "center" | "bottom";
+  // 드래그로 미세 조정된 커스텀 위치 (0~100%)
+  customX?: number;
+  customY?: number;
 }
 
 export type BgTreatment =
@@ -41,6 +44,9 @@ export const DEVICE_PRESETS = [
 ] as const;
 
 export type DevicePreset = (typeof DEVICE_PRESETS)[number];
+
+// 텍스트 필드명 (title = titleLine1+2 묶음, sub = subLine1+2 묶음)
+export type CTTextField = "label" | "title" | "titleLine1" | "titleLine2" | "sub" | "subLine1" | "subLine2";
 
 // 채팅 메시지
 export interface ChatMessage {

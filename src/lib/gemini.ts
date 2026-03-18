@@ -1,4 +1,4 @@
-import { CTContent } from "@/types/ct";
+import { CTContent, CTTextField } from "@/types/ct";
 import { getByteLength, truncateToBytes } from "@/lib/bytes";
 
 const SYSTEM_PROMPT = `너는 한국 금융사 앱의 CT(콘텐츠스레드) 카드 카피라이터야.
@@ -97,6 +97,121 @@ export function parseGeminiResponse(raw: string): CTContent[] {
 function ensureBytes(str: string): string {
   if (getByteLength(str) <= 34) return str;
   return truncateToBytes(str, 34);
+}
+
+const FIELD_LABELS: Record<string, string> = {
+  label: "좌상단 라벨 (14pt, 카테고리/태그)",
+  title: "메인 타이틀 2줄 (24pt)",
+  titleLine1: "메인 타이틀 1줄 (24pt)",
+  titleLine2: "메인 타이틀 2줄 (24pt)",
+  sub: "좌하단 서브텍스트 2줄 (14pt)",
+  subLine1: "좌하단 서브텍스트 1줄 (14pt)",
+  subLine2: "좌하단 서브텍스트 2줄 (14pt)",
+};
+
+// 그룹 필드인지 판별
+export function isGroupField(field: CTTextField): field is "title" | "sub" {
+  return field === "title" || field === "sub";
+}
+
+export function buildSuggestBody(field: CTTextField, content: CTContent, count = 5) {
+  const context = {
+    label: content.label,
+    titleLine1: content.titleLine1,
+    titleLine2: content.titleLine2,
+    subLine1: content.subLine1,
+    subLine2: content.subLine2,
+  };
+
+  // 그룹 필드 (title = line1+2, sub = line1+2)
+  if (isGroupField(field)) {
+    const line1Key = field === "title" ? "titleLine1" : "subLine1";
+    const line2Key = field === "title" ? "titleLine2" : "subLine2";
+    const currentLine1 = content[line1Key];
+    const currentLine2 = content[line2Key];
+
+    const prompt = `너는 한국 금융사 앱의 CT 카드 카피라이터야.
+
+아래 카드의 "${FIELD_LABELS[field]}" 영역을 대체할 수 있는 대안 ${count}개를 만들어.
+이 영역은 2줄로 구성돼 있어.
+
+[현재 카드]:
+${JSON.stringify(context, null, 2)}
+
+[수정 대상]: ${field} (현재: "${currentLine1}" / "${currentLine2}")
+
+## 제약사항
+- 각 줄은 반드시 34byte 이내 (한글=2byte, 영문/숫자=1byte)
+- 2줄이 하나의 메시지로 자연스럽게 연결돼야 함
+- 다양한 톤: 정보전달, 감성, 행동유도, 위트 등 섞어줘
+- JSON 배열로 반환. 각 항목은 [line1, line2] 형태:
+  [["1줄차 대안1", "2줄차 대안1"], ["1줄차 대안2", "2줄차 대안2"], ...]`;
+
+    return {
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseMimeType: "application/json",
+        temperature: 1.0,
+      },
+    };
+  }
+
+  // 단일 필드
+  const prompt = `너는 한국 금융사 앱의 CT 카드 카피라이터야.
+
+아래 카드의 "${FIELD_LABELS[field]}" 필드를 대체할 수 있는 대안 ${count}개를 만들어.
+
+[현재 카드]:
+${JSON.stringify(context, null, 2)}
+
+[수정 대상 필드]: ${field} (현재 값: "${content[field]}")
+
+## 제약사항
+- 각 대안은 반드시 34byte 이내 (한글=2byte, 영문/숫자=1byte)
+- 나머지 필드들과 자연스럽게 어울려야 함
+- 다양한 톤: 정보전달, 감성, 행동유도, 위트 등 섞어줘
+- JSON 문자열 배열만 반환: ["대안1", "대안2", ...]`;
+
+  return {
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: {
+      responseMimeType: "application/json",
+      temperature: 1.0,
+    },
+  };
+}
+
+// 단일 필드 대안 파싱
+export function parseSuggestResponse(raw: string): string[] {
+  let jsonStr = raw.trim();
+  const codeBlockMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (codeBlockMatch) jsonStr = codeBlockMatch[1].trim();
+
+  const parsed = JSON.parse(jsonStr);
+  if (!Array.isArray(parsed)) return [];
+
+  return parsed
+    .filter((s): s is string => typeof s === "string")
+    .map((s) => (getByteLength(s) > 34 ? truncateToBytes(s, 34) : s));
+}
+
+// 그룹 필드 대안 파싱 (각 항목이 [line1, line2])
+export function parseGroupSuggestResponse(raw: string): [string, string][] {
+  let jsonStr = raw.trim();
+  const codeBlockMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (codeBlockMatch) jsonStr = codeBlockMatch[1].trim();
+
+  const parsed = JSON.parse(jsonStr);
+  if (!Array.isArray(parsed)) return [];
+
+  return parsed
+    .filter((item): item is [string, string] =>
+      Array.isArray(item) && item.length >= 2 && typeof item[0] === "string" && typeof item[1] === "string"
+    )
+    .map(([l1, l2]) => [
+      getByteLength(l1) > 34 ? truncateToBytes(l1, 34) : l1,
+      getByteLength(l2) > 34 ? truncateToBytes(l2, 34) : l2,
+    ]);
 }
 
 function validateBgTreatment(bg: unknown): CTContent["bgTreatment"] {

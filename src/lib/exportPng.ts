@@ -38,7 +38,9 @@ function drawImageCover(
   dw: number,
   dh: number,
   alignX: string,
-  alignY: string
+  alignY: string,
+  customX?: number,
+  customY?: number
 ) {
   const imgRatio = img.width / img.height;
   const destRatio = dw / dh;
@@ -46,19 +48,21 @@ function drawImageCover(
   let sx: number, sy: number, sw: number, sh: number;
 
   if (imgRatio > destRatio) {
-    // 이미지가 더 넓음 → 높이 맞추고 가로 크롭
     sh = img.height;
     sw = sh * destRatio;
     sy = 0;
-    if (alignX === "left") sx = 0;
+    if (customX !== undefined) {
+      sx = (img.width - sw) * (customX / 100);
+    } else if (alignX === "left") sx = 0;
     else if (alignX === "right") sx = img.width - sw;
     else sx = (img.width - sw) / 2;
   } else {
-    // 이미지가 더 높음 → 너비 맞추고 세로 크롭
     sw = img.width;
     sh = sw / destRatio;
     sx = 0;
-    if (alignY === "top") sy = 0;
+    if (customY !== undefined) {
+      sy = (img.height - sh) * (customY / 100);
+    } else if (alignY === "top") sy = 0;
     else if (alignY === "bottom") sy = img.height - sh;
     else sy = (img.height - sh) / 2;
   }
@@ -90,7 +94,9 @@ export async function exportCtPng(content: CTContent): Promise<void> {
         W,
         H,
         content.imageConstraint.alignX,
-        content.imageConstraint.alignY
+        content.imageConstraint.alignY,
+        content.imageConstraint.customX,
+        content.imageConstraint.customY
       );
     } catch {
       // 이미지 로드 실패 시 회색 유지

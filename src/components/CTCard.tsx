@@ -1,20 +1,28 @@
 "use client";
 
-import { CTContent, CT_BASE_WIDTH, CT_BASE_HEIGHT } from "@/types/ct";
+import { CTContent, CT_BASE_WIDTH, CT_BASE_HEIGHT, CTTextField } from "@/types/ct";
 
 interface CTCardProps {
   content: CTContent;
   /** 렌더링할 너비 (디바이스 너비에 맞춤) */
   renderWidth: number;
+  /** 텍스트 필드 클릭 시 콜백 (없으면 클릭 비활성) */
+  onFieldClick?: (field: CTTextField, rect: DOMRect) => void;
+  /** 이미지 드래그 콜백 (customX, customY %) */
+  onImageDrag?: (customX: number, customY: number) => void;
 }
 
-export default function CTCard({ content, renderWidth }: CTCardProps) {
+export default function CTCard({ content, renderWidth, onFieldClick, onImageDrag }: CTCardProps) {
   const scale = renderWidth / CT_BASE_WIDTH;
   const renderHeight = CT_BASE_HEIGHT * scale;
   const textColor = content.textColor === "BK" ? "#000000" : "#FFFFFF";
 
-  // 이미지 정렬 CSS
-  const objectPosition = `${content.imageConstraint.alignX} ${content.imageConstraint.alignY}`;
+  // 이미지 정렬 CSS (커스텀 % 우선)
+  const { customX, customY } = content.imageConstraint;
+  const objectPosition =
+    customX !== undefined && customY !== undefined
+      ? `${customX}% ${customY}%`
+      : `${content.imageConstraint.alignX} ${content.imageConstraint.alignY}`;
 
   return (
     <div
@@ -25,16 +33,42 @@ export default function CTCard({ content, renderWidth }: CTCardProps) {
         borderRadius: 16 * scale,
       }}
     >
-      {/* 배경 이미지 */}
+      {/* 배경 이미지 (드래그로 크롭 조정 가능) */}
       {content.imageUrl && (
         <img
           src={content.imageUrl}
           alt=""
-          className="absolute inset-0 w-full h-full"
+          className={`absolute inset-0 w-full h-full ${onImageDrag ? "cursor-grab active:cursor-grabbing" : ""}`}
           style={{
             objectFit: content.imageConstraint.fit,
             objectPosition,
           }}
+          draggable={false}
+          onMouseDown={
+            onImageDrag && content.imageConstraint.fit === "cover"
+              ? (e) => {
+                  e.preventDefault();
+                  const startX = e.clientX;
+                  const startY = e.clientY;
+                  const startCX = customX ?? 50;
+                  const startCY = customY ?? 50;
+                  const onMove = (me: MouseEvent) => {
+                    const dx = ((me.clientX - startX) / renderWidth) * -100;
+                    const dy = ((me.clientY - startY) / renderHeight) * -100;
+                    onImageDrag!(
+                      Math.max(0, Math.min(100, startCX + dx)),
+                      Math.max(0, Math.min(100, startCY + dy))
+                    );
+                  };
+                  const onUp = () => {
+                    window.removeEventListener("mousemove", onMove);
+                    window.removeEventListener("mouseup", onUp);
+                  };
+                  window.addEventListener("mousemove", onMove);
+                  window.addEventListener("mouseup", onUp);
+                }
+              : undefined
+          }
         />
       )}
 
@@ -81,45 +115,33 @@ export default function CTCard({ content, renderWidth }: CTCardProps) {
         }}
       >
         {/* 1. label: 14/20 SF Display Pro Bold */}
-        <div
-          style={{
-            fontSize: 14 * scale,
-            lineHeight: `${20 * scale}px`,
-            fontWeight: 700,
-            color: textColor,
-          }}
+        <FieldSpan
+          field="label"
+          scale={scale}
+          fontSize={14}
+          lineHeight={20}
+          color={textColor}
+          onFieldClick={onFieldClick}
         >
           {content.label}
-        </div>
+        </FieldSpan>
 
         {/* gap 8px */}
         <div style={{ height: 8 * scale }} />
 
-        {/* 2. titleLine1: 24/32 SF Display Pro Bold */}
-        <div
-          style={{
-            fontSize: 24 * scale,
-            lineHeight: `${32 * scale}px`,
-            fontWeight: 700,
-            color: textColor,
-            wordBreak: "keep-all",
-          }}
+        {/* 2-3. title 그룹 (titleLine1 + titleLine2) */}
+        <FieldSpan
+          field="title"
+          scale={scale}
+          fontSize={24}
+          lineHeight={32}
+          color={textColor}
+          onFieldClick={onFieldClick}
+          keepAll
         >
-          {content.titleLine1}
-        </div>
-
-        {/* 3. titleLine2: 24/32 SF Display Pro Bold (gap 0) */}
-        <div
-          style={{
-            fontSize: 24 * scale,
-            lineHeight: `${32 * scale}px`,
-            fontWeight: 700,
-            color: textColor,
-            wordBreak: "keep-all",
-          }}
-        >
-          {content.titleLine2}
-        </div>
+          <div>{content.titleLine1}</div>
+          <div>{content.titleLine2}</div>
+        </FieldSpan>
       </div>
 
       {/* 좌하단 서브텍스트: padding 24px 하단/좌/우 */}
@@ -131,28 +153,18 @@ export default function CTCard({ content, renderWidth }: CTCardProps) {
           right: 24 * scale,
         }}
       >
-        {/* subLine1: 14/20 */}
-        <div
-          style={{
-            fontSize: 14 * scale,
-            lineHeight: `${20 * scale}px`,
-            fontWeight: 700,
-            color: textColor,
-          }}
+        {/* sub 그룹 (subLine1 + subLine2) */}
+        <FieldSpan
+          field="sub"
+          scale={scale}
+          fontSize={14}
+          lineHeight={20}
+          color={textColor}
+          onFieldClick={onFieldClick}
         >
-          {content.subLine1}
-        </div>
-        {/* subLine2: 14/20 (gap 0) */}
-        <div
-          style={{
-            fontSize: 14 * scale,
-            lineHeight: `${20 * scale}px`,
-            fontWeight: 700,
-            color: textColor,
-          }}
-        >
-          {content.subLine2}
-        </div>
+          <div>{content.subLine1}</div>
+          <div>{content.subLine2}</div>
+        </FieldSpan>
       </div>
 
       {/* 우상단: 하트 아이콘 — padding 14px */}
@@ -187,6 +199,52 @@ export default function CTCard({ content, renderWidth }: CTCardProps) {
           }}
         />
       )}
+    </div>
+  );
+}
+
+/** 클릭 가능한 텍스트 필드 래퍼 */
+function FieldSpan({
+  field,
+  scale,
+  fontSize,
+  lineHeight,
+  color,
+  onFieldClick,
+  keepAll,
+  children,
+}: {
+  field: CTTextField;
+  scale: number;
+  fontSize: number;
+  lineHeight: number;
+  color: string;
+  onFieldClick?: (field: CTTextField, rect: DOMRect) => void;
+  keepAll?: boolean;
+  children: React.ReactNode;
+}) {
+  const interactive = !!onFieldClick;
+  return (
+    <div
+      onClick={
+        interactive
+          ? (e) => {
+              e.stopPropagation();
+              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              onFieldClick!(field, rect);
+            }
+          : undefined
+      }
+      className={interactive ? "cursor-pointer transition-colors rounded-sm hover:bg-white/20" : ""}
+      style={{
+        fontSize: fontSize * scale,
+        lineHeight: `${lineHeight * scale}px`,
+        fontWeight: 700,
+        color,
+        wordBreak: keepAll ? "keep-all" : undefined,
+      }}
+    >
+      {children}
     </div>
   );
 }
