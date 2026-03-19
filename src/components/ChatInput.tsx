@@ -208,9 +208,8 @@ export default function ChatInput({
           placeholder={images.length > 0 ? "이미지와 함께 요청을 입력하세요" : placeholder}
           disabled={disabled}
           rows={1}
-          className={`flex-1 resize-none outline-none bg-transparent ${
-            large ? "text-base" : "text-sm"
-          } placeholder:text-gray-400`}
+          className={`flex-1 resize-none outline-none bg-transparent text-base placeholder:text-gray-400`}
+          style={{ fontSize: "16px" }}
         />
         <button
           onClick={handleSubmit}

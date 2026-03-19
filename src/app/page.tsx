@@ -50,6 +50,9 @@ export default function Home() {
   // 텍스트 수정 상태
   const [editingField, setEditingField] = useState<{ field: CTTextField; value: string } | null>(null);
 
+  // 변주 입력 모드 (+ 버튼 → 입력창 활성화)
+  const [variateInput, setVariateInput] = useState<"copy" | "sub" | "image" | null>(null);
+
   // 첫 생성 안내
   const [showHint, setShowHint] = useState(true);
 
@@ -278,8 +281,17 @@ export default function Home() {
     }
   };
 
-  // ── 변주 (필드별 대안 추가) ──
-  const handleVariate = async (field: "copy" | "sub" | "image") => {
+  // ── 변주 (+ 버튼) → 입력창 활성화 ──
+  const handleVariateClick = (field: "copy" | "sub" | "image") => {
+    setVariateInput(field);
+    setEditingField(null);
+  };
+
+  // 변주 실행 (입력창에서 submit)
+  const handleVariateSubmit = async (userPrompt: string) => {
+    const field = variateInput;
+    if (!field) return;
+    setVariateInput(null);
     setVariatingField(field);
 
     try {
@@ -290,20 +302,20 @@ export default function Home() {
           body: JSON.stringify({
             field: field === "copy" ? "title" : "sub",
             content: composite,
+            ...(userPrompt ? { hint: userPrompt } : {}),
           }),
         });
         if (!res.ok) throw new Error("대안 생성 실패");
         const data = await res.json();
 
         if (field === "copy" && Array.isArray(data.suggestions)) {
-          // title 그룹: [[line1, line2], ...]
           const newCopies: CopyOption[] = data.suggestions.map((s: [string, string]) => ({
             label: composite.label,
             titleLine1: s[0],
             titleLine2: s[1],
           }));
           setCopyPool((prev) => [...prev, ...newCopies]);
-          setSelCopy(copyPool.length); // 새 첫 번째로 이동
+          setSelCopy(copyPool.length);
         } else if (field === "sub" && Array.isArray(data.suggestions)) {
           const newSubs: SubOption[] = data.suggestions.map((s: [string, string]) => ({
             subLine1: s[0],
@@ -313,15 +325,10 @@ export default function Home() {
           setSelSub(subPool.length);
         }
       } else {
-        // 이미지 변주: 새 이미지 생성
         showStatus("새 이미지 생성 중...");
-        const imgUrl = await generateImageFromPrompt(
-          `${composite.label} ${composite.titleLine1} ${composite.titleLine2}`,
-          composite
-        );
-        if (imgUrl) {
-          addImageToPool(imgUrl);
-        }
+        const prompt = userPrompt || `${composite.label} ${composite.titleLine1} ${composite.titleLine2}`;
+        const imgUrl = await generateImageFromPrompt(prompt, composite);
+        if (imgUrl) addImageToPool(imgUrl);
       }
     } catch {
       showStatus("변주 생성에 실패했어요.");
@@ -426,6 +433,8 @@ export default function Home() {
     }
   };
 
+  const textColor = composite.textColor === "BK" ? "#000000" : "#FFFFFF";
+
   const PRESETS = [
     "스타벅스 브랜드 혜택 카드",
     "Amex 도쿄 다이닝 혜택",
@@ -447,35 +456,62 @@ export default function Home() {
               scale={SCALE}
             />
 
-            {/* 스와이프 존 오버레이 (CT 카드 영역 위) */}
+            {/* 캐러셀 오버레이 (CT 카드 영역 위) */}
             {hasContent && (
               <>
-                {/* 상단 텍스트 존 */}
-                <div
-                  className="absolute cursor-grab active:cursor-grabbing"
+                {/* 상단 텍스트 캐러셀 */}
+                <ZoneCarousel
+                  items={copyPool}
+                  selected={selCopy}
+                  zone="copy"
                   style={{ left: CT.x, top: CT.y, width: CT.w, height: CT.h * ZONE_TOP }}
-                  onTouchStart={handleCardTouchStart}
-                  onTouchEnd={(e) => handleCardTouchEnd(e, "copy")}
-                  onMouseDown={handleCardMouseDown}
-                  onMouseUp={(e) => handleCardMouseUp(e, "copy")}
+                  onSwipe={handleCardTouchStart}
+                  onSwipeEnd={handleCardTouchEnd}
+                  onMouseSwipe={handleCardMouseDown}
+                  onMouseSwipeEnd={handleCardMouseUp}
+                  renderItem={(item: CopyOption) => (
+                    <div style={{ padding: `${24 * SCALE}px`, paddingRight: `${24 * SCALE}px` }}>
+                      <div style={{ fontSize: 14 * SCALE, lineHeight: `${20 * SCALE}px`, fontWeight: 700, color: textColor }}>{item.label}</div>
+                      <div style={{ height: 8 * SCALE }} />
+                      <div style={{ fontSize: 24 * SCALE, lineHeight: `${32 * SCALE}px`, fontWeight: 700, color: textColor, wordBreak: "keep-all" }}>
+                        <div>{item.titleLine1}</div>
+                        <div>{item.titleLine2}</div>
+                      </div>
+                    </div>
+                  )}
                 />
-                {/* 이미지 존 */}
-                <div
-                  className="absolute cursor-grab active:cursor-grabbing"
+
+                {/* 이미지 캐러셀 */}
+                <ZoneCarousel
+                  items={imagePool}
+                  selected={selImage}
+                  zone="image"
                   style={{ left: CT.x, top: CT.y + CT.h * ZONE_TOP, width: CT.w, height: CT.h * (ZONE_MID - ZONE_TOP) }}
-                  onTouchStart={handleCardTouchStart}
-                  onTouchEnd={(e) => handleCardTouchEnd(e, "image")}
-                  onMouseDown={handleCardMouseDown}
-                  onMouseUp={(e) => handleCardMouseUp(e, "image")}
+                  onSwipe={handleCardTouchStart}
+                  onSwipeEnd={handleCardTouchEnd}
+                  onMouseSwipe={handleCardMouseDown}
+                  onMouseSwipeEnd={handleCardMouseUp}
+                  renderItem={() => <div />}
                 />
-                {/* 하단 텍스트 존 */}
-                <div
-                  className="absolute cursor-grab active:cursor-grabbing"
+
+                {/* 하단 텍스트 캐러셀 */}
+                <ZoneCarousel
+                  items={subPool}
+                  selected={selSub}
+                  zone="sub"
                   style={{ left: CT.x, top: CT.y + CT.h * ZONE_MID, width: CT.w, height: CT.h * (1 - ZONE_MID) }}
-                  onTouchStart={handleCardTouchStart}
-                  onTouchEnd={(e) => handleCardTouchEnd(e, "sub")}
-                  onMouseDown={handleCardMouseDown}
-                  onMouseUp={(e) => handleCardMouseUp(e, "sub")}
+                  onSwipe={handleCardTouchStart}
+                  onSwipeEnd={handleCardTouchEnd}
+                  onMouseSwipe={handleCardMouseDown}
+                  onMouseSwipeEnd={handleCardMouseUp}
+                  renderItem={(item: SubOption) => (
+                    <div className="absolute bottom-0 left-0 right-0" style={{ padding: `${24 * SCALE}px` }}>
+                      <div style={{ fontSize: 14 * SCALE, lineHeight: `${20 * SCALE}px`, fontWeight: 700, color: textColor }}>
+                        <div>{item.subLine1}</div>
+                        <div>{item.subLine2}</div>
+                      </div>
+                    </div>
+                  )}
                 />
 
                 {/* 첫 생성 힌트 */}
@@ -485,20 +521,10 @@ export default function Home() {
                     style={{ left: CT.x, top: CT.y, width: CT.w, height: CT.h }}
                   >
                     <div className="bg-black/60 text-white text-[10px] px-3 py-1.5 rounded-full">
-                      ← 영역별로 스와이프해서 조합해보세요 →
+                      ← 영역별로 스와이프해서 조합 →
                     </div>
                   </div>
                 )}
-
-                {/* 인디케이터 — 카드 우측에 작게 */}
-                <div
-                  className="absolute flex flex-col gap-1 items-center"
-                  style={{ left: CT.x + CT.w + 6, top: CT.y, height: CT.h }}
-                >
-                  <Dots current={selCopy} total={copyPool.length} top={CT.h * 0.15} />
-                  <Dots current={selImage} total={imagePool.length} top={CT.h * 0.55} />
-                  <Dots current={selSub} total={subPool.length} top={CT.h * 0.88} />
-                </div>
               </>
             )}
           </div>
@@ -512,9 +538,9 @@ export default function Home() {
             {/* 변주 버튼 바 (콘텐츠 있을 때) */}
             {hasContent && (
               <div className="flex items-center justify-center gap-2">
-                <VariateButton label="상단 문구" onClick={() => handleVariate("copy")} loading={variatingField === "copy"} count={copyPool.length} />
-                <VariateButton label="이미지" onClick={() => handleVariate("image")} loading={variatingField === "image"} count={imagePool.length} />
-                <VariateButton label="하단 문구" onClick={() => handleVariate("sub")} loading={variatingField === "sub"} count={subPool.length} />
+                <VariateButton label="상단 문구" onClick={() => handleVariateClick("copy")} loading={variatingField === "copy"} count={copyPool.length} />
+                <VariateButton label="이미지" onClick={() => handleVariateClick("image")} loading={variatingField === "image"} count={imagePool.length} />
+                <VariateButton label="하단 문구" onClick={() => handleVariateClick("sub")} loading={variatingField === "sub"} count={subPool.length} />
               </div>
             )}
 
@@ -560,8 +586,18 @@ export default function Home() {
               />
             )}
 
-            {/* 입력창 */}
-            {!editingField && (
+            {/* 변주 입력 모드 */}
+            {variateInput && !editingField && (
+              <VariateInputSheet
+                field={variateInput}
+                onSubmit={handleVariateSubmit}
+                onCancel={() => setVariateInput(null)}
+                loading={variatingField !== null}
+              />
+            )}
+
+            {/* 일반 입력창 */}
+            {!editingField && !variateInput && (
               <ChatInput onSubmit={handleMessage} disabled={isLoading} autoFocus />
             )}
           </div>
@@ -640,19 +676,133 @@ function EditSheet({
   );
 }
 
-// ── 카드 우측 인디케이터 dots ──
-function Dots({ current, total, top }: { current: number; total: number; top: number }) {
-  if (total <= 1) return null;
+// ── 존별 캐러셀 오버레이 ──
+function ZoneCarousel<T>({
+  items,
+  selected,
+  zone,
+  style,
+  onSwipe,
+  onSwipeEnd,
+  onMouseSwipe,
+  onMouseSwipeEnd,
+  renderItem,
+}: {
+  items: T[];
+  selected: number;
+  zone: "copy" | "image" | "sub";
+  style: React.CSSProperties;
+  onSwipe: (e: React.TouchEvent) => void;
+  onSwipeEnd: (e: React.TouchEvent, zone: "copy" | "image" | "sub") => void;
+  onMouseSwipe: (e: React.MouseEvent) => void;
+  onMouseSwipeEnd: (e: React.MouseEvent, zone: "copy" | "image" | "sub") => void;
+  renderItem: (item: T, index: number) => React.ReactNode;
+}) {
+  // 이미지 존은 투명 스와이프만 (CTCard가 이미지 렌더)
+  const isImageZone = zone === "image";
+
   return (
-    <div className="absolute flex flex-col gap-[3px] items-center" style={{ top }}>
-      {Array.from({ length: Math.min(total, 5) }).map((_, i) => (
+    <div
+      className="absolute overflow-hidden cursor-grab active:cursor-grabbing"
+      style={style}
+      onTouchStart={onSwipe}
+      onTouchEnd={(e) => onSwipeEnd(e, zone)}
+      onMouseDown={onMouseSwipe}
+      onMouseUp={(e) => onMouseSwipeEnd(e, zone)}
+    >
+      {!isImageZone && (
         <div
-          key={i}
-          className={`rounded-full transition-all ${
-            i === current ? "w-1.5 h-1.5 bg-gray-700" : "w-1 h-1 bg-gray-300"
-          }`}
+          className="flex transition-transform duration-300 ease-out h-full"
+          style={{
+            width: `${items.length * 100}%`,
+            transform: `translateX(-${(selected / items.length) * 100}%)`,
+          }}
+        >
+          {items.map((item, i) => (
+            <div
+              key={i}
+              className="h-full transition-opacity duration-300"
+              style={{
+                width: `${100 / items.length}%`,
+                opacity: i === selected ? 1 : 0.25,
+              }}
+            >
+              {renderItem(item, i)}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 좌우 그라데이션 셰이드 (이전/다음 있을 때) */}
+      {selected > 0 && (
+        <div className="absolute left-0 top-0 bottom-0 w-4 bg-gradient-to-r from-black/15 to-transparent pointer-events-none" />
+      )}
+      {selected < items.length - 1 && (
+        <div className="absolute right-0 top-0 bottom-0 w-4 bg-gradient-to-l from-black/15 to-transparent pointer-events-none" />
+      )}
+
+      {/* 카운터 */}
+      {items.length > 1 && (
+        <div className="absolute top-1 right-1 bg-black/40 text-white text-[8px] px-1.5 py-0.5 rounded-full pointer-events-none">
+          {selected + 1}/{items.length}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 변주 입력 시트 ──
+const VARIATE_LABELS = {
+  copy: "상단 문구",
+  sub: "하단 문구",
+  image: "이미지",
+};
+
+function VariateInputSheet({
+  field,
+  onSubmit,
+  onCancel,
+  loading,
+}: {
+  field: "copy" | "sub" | "image";
+  onSubmit: (prompt: string) => void;
+  onCancel: () => void;
+  loading: boolean;
+}) {
+  const [text, setText] = useState("");
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  return (
+    <div className="bg-white border-2 border-blue-400 rounded-xl p-2 shadow-sm">
+      <div className="text-[10px] text-blue-500 mb-1 px-1">
+        {VARIATE_LABELS[field]} 변주 — 추가 요청사항이 있나요?
+      </div>
+      <div className="flex items-center gap-2">
+        <textarea
+          ref={inputRef}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSubmit(text); } if (e.key === "Escape") onCancel(); }}
+          placeholder="예: 더 감성적으로, 할인 강조해서..."
+          autoFocus
+          rows={1}
+          className="flex-1 resize-none outline-none bg-transparent text-sm placeholder:text-gray-300"
+          style={{ fontSize: "16px" }}
+          disabled={loading}
         />
-      ))}
+        <button
+          onClick={() => onSubmit(text)}
+          disabled={loading}
+          className="shrink-0 px-3 h-8 rounded-lg bg-blue-500 text-white text-xs disabled:opacity-50 transition-colors whitespace-nowrap"
+        >
+          {loading ? "생성 중..." : text.trim() ? "생성" : "바로 생성"}
+        </button>
+        <button onClick={onCancel} className="text-gray-300 hover:text-gray-500 shrink-0">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
     </div>
   );
 }
