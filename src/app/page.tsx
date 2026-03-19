@@ -454,78 +454,118 @@ export default function Home() {
               content={composite}
               onFieldClick={hasContent ? (field: CTTextField, _rect: DOMRect) => handleFieldClick(field) : undefined}
               scale={SCALE}
+              skeleton={hasContent}
             />
 
-            {/* 캐러셀 오버레이 (CT 카드 영역 위) */}
+            {/* 캐러셀 레이어 — 목업 위, CT 카드 영역에 클리핑 */}
             {hasContent && (
-              <>
-                {/* 상단 텍스트 캐러셀 */}
-                <ZoneCarousel
-                  items={copyPool}
-                  selected={selCopy}
-                  zone="copy"
-                  style={{ left: CT.x, top: CT.y, width: CT.w, height: CT.h * ZONE_TOP }}
-                  onSwipe={handleCardTouchStart}
-                  onSwipeEnd={handleCardTouchEnd}
-                  onMouseSwipe={handleCardMouseDown}
-                  onMouseSwipeEnd={handleCardMouseUp}
-                  renderItem={(item: CopyOption) => (
-                    <div style={{ padding: `${24 * SCALE}px`, paddingRight: `${24 * SCALE}px` }}>
-                      <div style={{ fontSize: 14 * SCALE, lineHeight: `${20 * SCALE}px`, fontWeight: 700, color: textColor }}>{item.label}</div>
-                      <div style={{ height: 8 * SCALE }} />
-                      <div style={{ fontSize: 24 * SCALE, lineHeight: `${32 * SCALE}px`, fontWeight: 700, color: textColor, wordBreak: "keep-all" }}>
-                        <div>{item.titleLine1}</div>
-                        <div>{item.titleLine2}</div>
+              <div
+                className="absolute overflow-hidden pointer-events-none"
+                style={{
+                  left: CT.x,
+                  top: CT.y,
+                  width: CT.w,
+                  height: CT.h,
+                  borderRadius: 16 * SCALE,
+                }}
+              >
+                {/* 이미지 캐러셀 (전체 카드 영역) */}
+                <div
+                  className="absolute inset-0 pointer-events-auto cursor-grab active:cursor-grabbing"
+                  onTouchStart={handleCardTouchStart}
+                  onTouchEnd={(e) => handleCardTouchEnd(e, "image")}
+                  onMouseDown={handleCardMouseDown}
+                  onMouseUp={(e) => handleCardMouseUp(e, "image")}
+                >
+                  <div
+                    className="flex h-full transition-transform duration-300 ease-out"
+                    style={{ width: `${imagePool.length * 100}%`, transform: `translateX(-${(selImage / imagePool.length) * 100}%)` }}
+                  >
+                    {imagePool.map((img, i) => (
+                      <div key={i} className="relative h-full transition-opacity duration-300" style={{ width: `${100 / imagePool.length}%`, opacity: i === selImage ? 1 : 0.3 }}>
+                        {img.imageUrl && (
+                          <img src={img.imageUrl} alt="" className="absolute inset-0 w-full h-full" style={{ objectFit: "cover" }} draggable={false} />
+                        )}
+                        {/* 그라데이션 */}
+                        {img.bgTreatment.type === "gradient" && (
+                          <div className="absolute top-0 left-0 w-full" style={{
+                            height: `${(2/3)*100}%`,
+                            background: img.bgTreatment.direction === "dark"
+                              ? `linear-gradient(to bottom, ${img.bgTreatment.stops.map(s => `rgba(0,0,0,${s.opacity}) ${s.position}%`).join(", ")})`
+                              : `linear-gradient(to bottom, ${img.bgTreatment.stops.map(s => `rgba(255,255,255,${s.opacity}) ${s.position}%`).join(", ")})`,
+                          }} />
+                        )}
                       </div>
-                    </div>
-                  )}
-                />
+                    ))}
+                  </div>
+                </div>
 
-                {/* 이미지 캐러셀 */}
-                <ZoneCarousel
-                  items={imagePool}
-                  selected={selImage}
-                  zone="image"
-                  style={{ left: CT.x, top: CT.y + CT.h * ZONE_TOP, width: CT.w, height: CT.h * (ZONE_MID - ZONE_TOP) }}
-                  onSwipe={handleCardTouchStart}
-                  onSwipeEnd={handleCardTouchEnd}
-                  onMouseSwipe={handleCardMouseDown}
-                  onMouseSwipeEnd={handleCardMouseUp}
-                  renderItem={() => <div />}
-                />
+                {/* 상단 텍스트 캐러셀 */}
+                <div
+                  className="absolute top-0 left-0 right-0 pointer-events-auto cursor-grab active:cursor-grabbing"
+                  style={{ height: CT.h * ZONE_TOP }}
+                  onTouchStart={handleCardTouchStart}
+                  onTouchEnd={(e) => handleCardTouchEnd(e, "copy")}
+                  onMouseDown={handleCardMouseDown}
+                  onMouseUp={(e) => handleCardMouseUp(e, "copy")}
+                >
+                  <div
+                    className="flex h-full transition-transform duration-300 ease-out"
+                    style={{ width: `${copyPool.length * 100}%`, transform: `translateX(-${(selCopy / copyPool.length) * 100}%)` }}
+                  >
+                    {copyPool.map((opt, i) => (
+                      <div key={i} className="h-full transition-opacity duration-300" style={{ width: `${100 / copyPool.length}%`, opacity: i === selCopy ? 1 : 0.3, padding: `${24*SCALE}px` }}>
+                        <div style={{ fontSize: 14*SCALE, lineHeight: `${20*SCALE}px`, fontWeight: 700, color: textColor }}>{opt.label}</div>
+                        <div style={{ height: 8*SCALE }} />
+                        <div style={{ fontSize: 24*SCALE, lineHeight: `${32*SCALE}px`, fontWeight: 700, color: textColor, wordBreak: "keep-all" }}>
+                          <div>{opt.titleLine1}</div>
+                          <div>{opt.titleLine2}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
 
                 {/* 하단 텍스트 캐러셀 */}
-                <ZoneCarousel
-                  items={subPool}
-                  selected={selSub}
-                  zone="sub"
-                  style={{ left: CT.x, top: CT.y + CT.h * ZONE_MID, width: CT.w, height: CT.h * (1 - ZONE_MID) }}
-                  onSwipe={handleCardTouchStart}
-                  onSwipeEnd={handleCardTouchEnd}
-                  onMouseSwipe={handleCardMouseDown}
-                  onMouseSwipeEnd={handleCardMouseUp}
-                  renderItem={(item: SubOption) => (
-                    <div className="absolute bottom-0 left-0 right-0" style={{ padding: `${24 * SCALE}px` }}>
-                      <div style={{ fontSize: 14 * SCALE, lineHeight: `${20 * SCALE}px`, fontWeight: 700, color: textColor }}>
-                        <div>{item.subLine1}</div>
-                        <div>{item.subLine2}</div>
+                <div
+                  className="absolute bottom-0 left-0 right-0 pointer-events-auto cursor-grab active:cursor-grabbing"
+                  style={{ height: CT.h * (1 - ZONE_MID) }}
+                  onTouchStart={handleCardTouchStart}
+                  onTouchEnd={(e) => handleCardTouchEnd(e, "sub")}
+                  onMouseDown={handleCardMouseDown}
+                  onMouseUp={(e) => handleCardMouseUp(e, "sub")}
+                >
+                  <div
+                    className="flex h-full transition-transform duration-300 ease-out"
+                    style={{ width: `${subPool.length * 100}%`, transform: `translateX(-${(selSub / subPool.length) * 100}%)` }}
+                  >
+                    {subPool.map((opt, i) => (
+                      <div key={i} className="h-full flex items-end transition-opacity duration-300" style={{ width: `${100 / subPool.length}%`, opacity: i === selSub ? 1 : 0.3, padding: `${24*SCALE}px` }}>
+                        <div style={{ fontSize: 14*SCALE, lineHeight: `${20*SCALE}px`, fontWeight: 700, color: textColor }}>
+                          <div>{opt.subLine1}</div>
+                          <div>{opt.subLine2}</div>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                />
+                    ))}
+                  </div>
+                </div>
+
+                {/* 하트 아이콘 */}
+                <div className="absolute pointer-events-none" style={{ top: 14*SCALE, right: 14*SCALE }}>
+                  <svg width={26*SCALE} height={26*SCALE} viewBox="0 0 26 26" fill="none">
+                    <path fillRule="evenodd" clipRule="evenodd" d="M4.95665 7.02891C6.96199 5.02357 10.2133 5.02356 12.2186 7.02891L13 7.81028L13.7814 7.02892C15.7867 5.02357 19.038 5.02357 21.0433 7.02891C23.0487 9.03426 23.0487 12.2855 21.0433 14.2909L13.71 21.6242C13.3179 22.0164 12.6821 22.0164 12.29 21.6242L4.95665 14.2909C2.9513 12.2855 2.9513 9.03426 4.95665 7.02891ZM10.8398 8.40776C9.59597 7.16395 7.57933 7.16394 6.3355 8.40777C5.09168 9.65159 5.09168 11.6682 6.3355 12.912L13 19.5765L19.6645 12.912C20.9083 11.6682 20.9083 9.65159 19.6645 8.40777C18.4207 7.16394 16.404 7.16395 15.1602 8.40776L13 10.568L10.8398 8.40776Z" fill="white" fillOpacity="0.48"/>
+                  </svg>
+                </div>
 
                 {/* 첫 생성 힌트 */}
                 {showHint && (
-                  <div
-                    className="absolute flex items-center justify-center pointer-events-none animate-pulse"
-                    style={{ left: CT.x, top: CT.y, width: CT.w, height: CT.h }}
-                  >
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none animate-pulse">
                     <div className="bg-black/60 text-white text-[10px] px-3 py-1.5 rounded-full">
-                      ← 영역별로 스와이프해서 조합 →
+                      ← 영역별로 스와이프 →
                     </div>
                   </div>
                 )}
-              </>
+              </div>
             )}
           </div>
         </div>
@@ -672,81 +712,6 @@ function EditSheet({
           </svg>
         </button>
       </div>
-    </div>
-  );
-}
-
-// ── 존별 캐러셀 오버레이 ──
-function ZoneCarousel<T>({
-  items,
-  selected,
-  zone,
-  style,
-  onSwipe,
-  onSwipeEnd,
-  onMouseSwipe,
-  onMouseSwipeEnd,
-  renderItem,
-}: {
-  items: T[];
-  selected: number;
-  zone: "copy" | "image" | "sub";
-  style: React.CSSProperties;
-  onSwipe: (e: React.TouchEvent) => void;
-  onSwipeEnd: (e: React.TouchEvent, zone: "copy" | "image" | "sub") => void;
-  onMouseSwipe: (e: React.MouseEvent) => void;
-  onMouseSwipeEnd: (e: React.MouseEvent, zone: "copy" | "image" | "sub") => void;
-  renderItem: (item: T, index: number) => React.ReactNode;
-}) {
-  // 이미지 존은 투명 스와이프만 (CTCard가 이미지 렌더)
-  const isImageZone = zone === "image";
-
-  return (
-    <div
-      className="absolute overflow-hidden cursor-grab active:cursor-grabbing"
-      style={style}
-      onTouchStart={onSwipe}
-      onTouchEnd={(e) => onSwipeEnd(e, zone)}
-      onMouseDown={onMouseSwipe}
-      onMouseUp={(e) => onMouseSwipeEnd(e, zone)}
-    >
-      {!isImageZone && (
-        <div
-          className="flex transition-transform duration-300 ease-out h-full"
-          style={{
-            width: `${items.length * 100}%`,
-            transform: `translateX(-${(selected / items.length) * 100}%)`,
-          }}
-        >
-          {items.map((item, i) => (
-            <div
-              key={i}
-              className="h-full transition-opacity duration-300"
-              style={{
-                width: `${100 / items.length}%`,
-                opacity: i === selected ? 1 : 0.25,
-              }}
-            >
-              {renderItem(item, i)}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* 좌우 그라데이션 셰이드 (이전/다음 있을 때) */}
-      {selected > 0 && (
-        <div className="absolute left-0 top-0 bottom-0 w-4 bg-gradient-to-r from-black/15 to-transparent pointer-events-none" />
-      )}
-      {selected < items.length - 1 && (
-        <div className="absolute right-0 top-0 bottom-0 w-4 bg-gradient-to-l from-black/15 to-transparent pointer-events-none" />
-      )}
-
-      {/* 카운터 */}
-      {items.length > 1 && (
-        <div className="absolute top-1 right-1 bg-black/40 text-white text-[8px] px-1.5 py-0.5 rounded-full pointer-events-none">
-          {selected + 1}/{items.length}
-        </div>
-      )}
     </div>
   );
 }

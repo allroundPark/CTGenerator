@@ -10,9 +10,11 @@ interface CTCardProps {
   onFieldClick?: (field: CTTextField, rect: DOMRect) => void;
   /** 이미지 드래그 콜백 (customX, customY %) */
   onImageDrag?: (customX: number, customY: number) => void;
+  /** 캐러셀 모드: 이미지/텍스트를 외부에서 렌더할 때 true */
+  skeleton?: boolean;
 }
 
-export default function CTCard({ content, renderWidth, onFieldClick, onImageDrag }: CTCardProps) {
+export default function CTCard({ content, renderWidth, onFieldClick, onImageDrag, skeleton }: CTCardProps) {
   const scale = renderWidth / CT_BASE_WIDTH;
   const renderHeight = CT_BASE_HEIGHT * scale;
   const textColor = content.textColor === "BK" ? "#000000" : "#FFFFFF";
@@ -33,8 +35,8 @@ export default function CTCard({ content, renderWidth, onFieldClick, onImageDrag
         borderRadius: 16 * scale,
       }}
     >
-      {/* 배경 이미지 (드래그로 크롭 조정 가능) */}
-      {content.imageUrl && (
+      {/* 배경 이미지 (skeleton 모드에서도 렌더 — 캐러셀에서 덮어씀) */}
+      {content.imageUrl && !skeleton && (
         <img
           src={content.imageUrl}
           alt=""
@@ -105,67 +107,44 @@ export default function CTCard({ content, renderWidth, onFieldClick, onImageDrag
         />
       )}
 
-      {/* 좌상단 텍스트 영역: padding 24px */}
-      <div
-        className="absolute"
-        style={{
-          top: 24 * scale,
-          left: 24 * scale,
-          right: 24 * scale,
-        }}
-      >
-        {/* 1. label: 14/20 SF Display Pro Bold */}
-        <FieldSpan
-          field="label"
-          scale={scale}
-          fontSize={14}
-          lineHeight={20}
-          color={textColor}
-          onFieldClick={onFieldClick}
-        >
-          {content.label}
-        </FieldSpan>
+      {/* 텍스트 — skeleton 모드에서는 숨김 (캐러셀에서 렌더) */}
+      {!skeleton && (
+        <>
+          {/* 좌상단 텍스트 영역: padding 24px */}
+          <div
+            className="absolute"
+            style={{
+              top: 24 * scale,
+              left: 24 * scale,
+              right: 24 * scale,
+            }}
+          >
+            <FieldSpan field="label" scale={scale} fontSize={14} lineHeight={20} color={textColor} onFieldClick={onFieldClick}>
+              {content.label}
+            </FieldSpan>
+            <div style={{ height: 8 * scale }} />
+            <FieldSpan field="title" scale={scale} fontSize={24} lineHeight={32} color={textColor} onFieldClick={onFieldClick} keepAll>
+              <div>{content.titleLine1}</div>
+              <div>{content.titleLine2}</div>
+            </FieldSpan>
+          </div>
 
-        {/* gap 8px */}
-        <div style={{ height: 8 * scale }} />
-
-        {/* 2-3. title 그룹 (titleLine1 + titleLine2) */}
-        <FieldSpan
-          field="title"
-          scale={scale}
-          fontSize={24}
-          lineHeight={32}
-          color={textColor}
-          onFieldClick={onFieldClick}
-          keepAll
-        >
-          <div>{content.titleLine1}</div>
-          <div>{content.titleLine2}</div>
-        </FieldSpan>
-      </div>
-
-      {/* 좌하단 서브텍스트: padding 24px 하단/좌/우 */}
-      <div
-        className="absolute"
-        style={{
-          bottom: 24 * scale,
-          left: 24 * scale,
-          right: 24 * scale,
-        }}
-      >
-        {/* sub 그룹 (subLine1 + subLine2) */}
-        <FieldSpan
-          field="sub"
-          scale={scale}
-          fontSize={14}
-          lineHeight={20}
-          color={textColor}
-          onFieldClick={onFieldClick}
-        >
-          <div>{content.subLine1}</div>
-          <div>{content.subLine2}</div>
-        </FieldSpan>
-      </div>
+          {/* 좌하단 서브텍스트 */}
+          <div
+            className="absolute"
+            style={{
+              bottom: 24 * scale,
+              left: 24 * scale,
+              right: 24 * scale,
+            }}
+          >
+            <FieldSpan field="sub" scale={scale} fontSize={14} lineHeight={20} color={textColor} onFieldClick={onFieldClick}>
+              <div>{content.subLine1}</div>
+              <div>{content.subLine2}</div>
+            </FieldSpan>
+          </div>
+        </>
+      )}
 
       {/* 우상단: 하트 아이콘 — padding 14px */}
       <div

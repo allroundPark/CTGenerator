@@ -10,6 +10,8 @@ interface DeviceViewerProps {
   onImageDrag?: (customX: number, customY: number) => void;
   /** 모바일에서 축소 스케일 (기본 0.85) */
   scale?: number;
+  /** skeleton 모드: 이미지/텍스트 숨김 (외부 캐러셀에서 렌더) */
+  skeleton?: boolean;
 }
 
 // 목업 이미지 기준 (1x = 375x812)
@@ -22,7 +24,7 @@ const MOCKUP = {
 
 type Theme = "dark" | "light";
 
-export default function DeviceViewer({ content, onFieldClick, onImageDrag, scale }: DeviceViewerProps) {
+export default function DeviceViewer({ content, onFieldClick, onImageDrag, scale, skeleton }: DeviceViewerProps) {
   const [theme, setTheme] = useState<Theme>("light");
 
   const displayScale = scale ?? 0.85;
@@ -63,6 +65,7 @@ export default function DeviceViewer({ content, onFieldClick, onImageDrag, scale
             renderWidth={MOCKUP.ct.w * displayScale}
             onFieldClick={onFieldClick}
             onImageDrag={onImageDrag}
+            skeleton={skeleton}
           />
         </div>
       </div>
