@@ -15,6 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "CT Generator - 콘텐츠스레드 생성기",
   description: "콘텐츠스레드 041 타입 자동 생성 도구",
+  viewport: "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover",
 };
 
 export default function RootLayout({
