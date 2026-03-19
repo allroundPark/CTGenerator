@@ -161,7 +161,9 @@ export default function Home() {
     });
 
     setCopyPool((prev) => [...prev, ...newCopies]);
-    setSubPool((prev) => [...prev, ...newSubs]);
+    // 첫 생성 시 "없음"을 첫 번째 옵션으로 추가
+    const emptySub: SubOption = { subLine1: "", subLine2: "" };
+    setSubPool((prev) => prev.length === 0 ? [emptySub, ...newSubs] : [...prev, ...newSubs]);
 
     // 이미지는 공유 — 하나만 추가 (중복 방지)
     const imgUrl = imageUrl || variants[0]?.imageUrl;
@@ -208,10 +210,93 @@ export default function Home() {
     const directImageUrl = applyImages.length > 0 ? applyImages[0].previewUrl : "";
 
     setIsLoading(true);
-    showStatus("문구 생성 중...");
 
     try {
-      // STEP 1: 문구 생성
+      // 후속 요청: 의도 분류 후 해당 풀만 추가
+      if (hasContent) {
+        showStatus("요청 분석 중...");
+        const intentRes = await fetch("/api/classify-intent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: text, currentContent: composite }),
+        });
+        const { intent } = await intentRes.json();
+
+        if (intent === "image") {
+          showStatus("이미지 생성 중...");
+          const prompt = text || `${composite.label} ${composite.titleLine1} ${composite.titleLine2}`;
+          let foundImageUrl = "";
+          if (refImages.length > 0) {
+            foundImageUrl = await generateImage(text, refImages[0], composite, "reference") || "";
+          } else if (editImages.length > 0) {
+            foundImageUrl = await generateImage(text, editImages[0], composite, "edit") || "";
+          } else if (directImageUrl) {
+            addImageToPool(directImageUrl);
+            foundImageUrl = directImageUrl;
+          } else {
+            foundImageUrl = await generateImageFromPrompt(prompt, composite) || "";
+          }
+          if (foundImageUrl && foundImageUrl !== directImageUrl) {
+            addImageToPool(foundImageUrl, composite.textColor, composite.bgTreatment);
+          }
+          showStatus("이미지 추가 완료!");
+          return;
+        }
+
+        if (intent === "copy") {
+          showStatus("상단 문구 생성 중...");
+          const res = await fetch("/api/suggest", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ field: "title", content: composite, hint: text }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data.suggestions)) {
+              const newCopies: CopyOption[] = data.suggestions.map((s: [string, string]) => ({
+                label: composite.label, titleLine1: s[0], titleLine2: s[1],
+              }));
+              setCopyPool((prev) => [...prev, ...newCopies]);
+              setSelCopy(copyPool.length);
+            }
+          }
+          showStatus("상단 문구 추가 완료!");
+          return;
+        }
+
+        if (intent === "sub") {
+          showStatus("하단 문구 생성 중...");
+          const res = await fetch("/api/suggest", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ field: "sub", content: composite, hint: text }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data.suggestions)) {
+              const newSubs: SubOption[] = data.suggestions.map((s: [string, string]) => ({
+                subLine1: s[0], subLine2: s[1],
+              }));
+              setSubPool((prev) => [...prev, ...newSubs]);
+              setSelSub(subPool.length);
+            }
+          }
+          showStatus("하단 문구 추가 완료!");
+          return;
+        }
+
+        // intent === "new" or "all" → 풀 초기화 후 전체 재생성
+        setCopyPool([]);
+        setSubPool([]);
+        setImagePool([]);
+        setSelCopy(0);
+        setSelSub(0);
+        setSelImage(0);
+      }
+
+      // 첫 생성 또는 새 주제 전체 생성
+      showStatus("문구 생성 중...");
+
       const firstApplyFile = applyImages[0]?.file;
       const [genRes, imageAnalysis] = await Promise.all([
         fetch("/api/generate", {
@@ -242,21 +327,18 @@ export default function Home() {
       appendToPool(newVariants, directImageUrl);
       showStatus("문구 3안 추가! 각 영역을 넘겨서 조합해보세요.");
 
-      // STEP 2: 이미지 처리
+      // 이미지 처리
       if (!directImageUrl) {
         let foundImageUrl = "";
 
-        // 참고 이미지
         if (refImages.length > 0) {
           showStatus("참고 이미지 기반 생성 중...");
           foundImageUrl = await generateImage(text, refImages[0], newVariants[0], "reference") || "";
         }
-        // 편집 이미지
         if (!foundImageUrl && editImages.length > 0) {
           showStatus("이미지 편집 중...");
           foundImageUrl = await generateImage(text, editImages[0], newVariants[0], "edit") || "";
         }
-        // 에셋 검색 → AI 생성
         if (!foundImageUrl) {
           showStatus("이미지 검색 중...");
           foundImageUrl = await searchAsset(text) || "";
@@ -564,6 +646,34 @@ export default function Home() {
                       ← 영역별로 스와이프 →
                     </div>
                   </div>
+                )}
+              </div>
+            )}
+
+            {/* 풀별 도트 인디케이터 */}
+            {hasContent && (
+              <div className="flex flex-col items-center gap-1 mt-2">
+                {[
+                  { pool: copyPool, sel: selCopy, label: "문구" },
+                  { pool: imagePool, sel: selImage, label: "이미지" },
+                  { pool: subPool, sel: selSub, label: "하단" },
+                ].map(({ pool, sel, label }) =>
+                  pool.length > 1 && (
+                    <div key={label} className="flex items-center gap-1">
+                      <span className="text-[8px] text-gray-400 w-7 text-right mr-0.5">{label}</span>
+                      {pool.map((_, i) => (
+                        <div
+                          key={i}
+                          className="rounded-full transition-all duration-200"
+                          style={{
+                            width: i === sel ? 12 : 4,
+                            height: 4,
+                            backgroundColor: i === sel ? "#374151" : "#D1D5DB",
+                          }}
+                        />
+                      ))}
+                    </div>
+                  )
                 )}
               </div>
             )}

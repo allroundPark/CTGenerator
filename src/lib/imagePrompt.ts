@@ -1,5 +1,49 @@
 // 이미지 생성 프롬프트 빌더: imageType → 프리셋 선택 → 구조화 영문 프롬프트
 
+// 브랜드 키컬러 데이터 (data/brand_colors.json 기반)
+const BRAND_COLORS: Record<string, { primary: string; secondary: string | null; tertiary?: string }> = {
+  "Amex": { primary: "#016FD0", secondary: null },
+  "스타벅스": { primary: "#00704A", secondary: "#B5A369" },
+  "마켓컬리": { primary: "#5F0080", secondary: null },
+  "올리브영": { primary: "#9ACD32", secondary: "#F0918C" },
+  "GS칼텍스": { primary: "#009A82", secondary: "#F47920" },
+  "코스트코": { primary: "#E31837", secondary: "#1E3B8B" },
+  "네이버": { primary: "#03C75A", secondary: null },
+  "무신사": { primary: "#000000", secondary: "#FFFFFF" },
+  "SSG.COM": { primary: "#FF0050", secondary: null },
+  "G마켓": { primary: "#00C73C", secondary: "#0B2B8E" },
+  "대한항공": { primary: "#003DA5", secondary: null },
+  "쏘카": { primary: "#00B8FF", secondary: null },
+  "도미노": { primary: "#E31837", secondary: "#006491" },
+  "파리바게뜨": { primary: "#0062B8", secondary: null },
+  "투썸플레이스": { primary: "#D4003A", secondary: "#4A4A4A" },
+  "이마트": { primary: "#FFB81C", secondary: null },
+  "베스킨라빈스": { primary: "#FF1D8E", secondary: "#0C1D82" },
+  "넥슨": { primary: "#0C3558", secondary: "#2BB8E0", tertiary: "#C5D629" },
+  "롯데홈쇼핑": { primary: "#E60000", secondary: null },
+  "현대카드": { primary: "#1A1A1A", secondary: null },
+  "현대백화점": { primary: "#2D5A45", secondary: null },
+  "현대자동차": { primary: "#002C5F", secondary: null },
+  "멜론": { primary: "#00CD3C", secondary: null },
+  "T다이렉트샵": { primary: "#3C2CF5", secondary: null },
+};
+
+const BRAND_NAMES = Object.keys(BRAND_COLORS);
+
+/** 텍스트에서 브랜드명을 탐색하여 매칭된 브랜드의 키컬러 힌트 문자열을 반환 */
+function detectBrandColorHint(text: string): string | null {
+  for (const brand of BRAND_NAMES) {
+    if (text.includes(brand)) {
+      const colors = BRAND_COLORS[brand];
+      const parts: string[] = [`Primary: ${colors.primary}`];
+      if (colors.secondary) parts.push(`Secondary: ${colors.secondary}`);
+      if (colors.tertiary) parts.push(`Tertiary: ${colors.tertiary}`);
+      return `이 브랜드(${brand})의 키컬러는 ${parts.join(", ")}입니다. 이미지에 이 컬러 톤을 반영해주세요.`;
+    }
+  }
+  return null;
+}
+
 interface PromptParameters {
   style: string;
   camera_angle: string;
@@ -83,7 +127,7 @@ const PRESETS: Record<string, PromptParameters> = {
       },
     },
     atmosphere: "Serene, contemplative, exclusive, traditional Japanese luxury",
-    constraints: ["No text or typography", "No brand logos", "No direct face shots"],
+    constraints: ["No text or typography", "No direct face shots"],
   },
 
   INTERIOFOCUSED_hotel_suite: {
@@ -111,7 +155,7 @@ const PRESETS: Record<string, PromptParameters> = {
       },
     },
     atmosphere: "Serene, luxurious, restful, modern elegance, a perfect retreat",
-    constraints: ["No text or typography", "No brand logos", "No people"],
+    constraints: ["No text or typography", "No people"],
   },
 
   INTERIOFOCUSED_fine_dining: {
@@ -139,7 +183,7 @@ const PRESETS: Record<string, PromptParameters> = {
       },
     },
     atmosphere: "Intimate, premium, gastronomic, warm sophistication",
-    constraints: ["No text or typography", "No brand logos"],
+    constraints: ["No text or typography"],
   },
 
   PRODUCTFOCUSED_food: {
@@ -167,7 +211,7 @@ const PRESETS: Record<string, PromptParameters> = {
       },
     },
     atmosphere: "Appetizing, warm, indulgent, premium fast-casual",
-    constraints: ["No text or typography", "No brand logos", "No packaging with readable text"],
+    constraints: ["No text or typography", "No packaging with readable text"],
   },
 
   PRODUCTFOCUSED_lifestyle: {
@@ -195,7 +239,7 @@ const PRESETS: Record<string, PromptParameters> = {
       },
     },
     atmosphere: "Clean, aspirational, everyday luxury, curated lifestyle",
-    constraints: ["No text or typography", "No brand logos on products"],
+    constraints: ["No text or typography"],
   },
 
   OUTERIOR_tropical_resort: {
@@ -307,7 +351,7 @@ const PRESETS: Record<string, PromptParameters> = {
       },
     },
     atmosphere: "Premium service experience, personal, warm, aspirational",
-    constraints: ["No direct frontal face", "Show person from back, side, or cropped", "No text or logos"],
+    constraints: ["No direct frontal face", "Show person from back, side, or cropped", "No text or typography"],
   },
 };
 
@@ -341,12 +385,21 @@ function flattenPreset(p: PromptParameters, userRequest: string, copyContext?: C
   lines.push(`- Center: the main subject directly related to "${userRequest}" — choose realistic, recognizable items for this topic`);
 
   const se = p.composition.surrounding_elements;
-  lines.push(`- Top-left: keep clean/minimal (text overlay zone)`);
-  lines.push(`- Bottom-right: subtle accent detail (may have small logo overlay)`);
+  lines.push(`- The image should be FULL and RICH across the entire frame — no large empty/blank areas.`);
+  lines.push(`- Top-left area (upper 35% × left 60%): white text will overlay here, so keep this area LOW-CONTRAST and SIMPLE (e.g. dark/blurred/soft background, bokeh, shadow, out-of-focus elements) — but NOT empty. The background should still have content, just subdued enough for text readability.`);
+  lines.push(`- Bottom-left strip (lower 15% × left 50%): small text overlay area — keep relatively simple but not blank.`);
+  lines.push(`- The main subject can span the full frame but should be most prominent in the CENTER to BOTTOM-RIGHT area.`);
 
   lines.push(``);
   lines.push(`Hard constraints: ${p.constraints.join(". ")}. Absolutely NO text, letters, words, numbers, or typography anywhere in the image.`);
   lines.push(`Format: Square 1:1, commercial-grade quality, 335×348px card background.`);
+
+  // 브랜드 키컬러 힌트 추가
+  const brandHint = detectBrandColorHint(userRequest);
+  if (brandHint) {
+    lines.push(``);
+    lines.push(brandHint);
+  }
 
   return lines.join("\n");
 }

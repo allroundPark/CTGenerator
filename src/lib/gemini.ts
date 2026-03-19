@@ -1,5 +1,48 @@
 import { CTContent, CTTextField } from "@/types/ct";
 import { getByteLength, truncateToBytes } from "@/lib/bytes";
+// 브랜드 키컬러 데이터 (data/brand_colors.json 기반)
+const BRAND_COLORS: Record<string, { primary: string; secondary: string | null; tertiary?: string }> = {
+  "Amex": { primary: "#016FD0", secondary: null },
+  "스타벅스": { primary: "#00704A", secondary: "#B5A369" },
+  "마켓컬리": { primary: "#5F0080", secondary: null },
+  "올리브영": { primary: "#9ACD32", secondary: "#F0918C" },
+  "GS칼텍스": { primary: "#009A82", secondary: "#F47920" },
+  "코스트코": { primary: "#E31837", secondary: "#1E3B8B" },
+  "네이버": { primary: "#03C75A", secondary: null },
+  "무신사": { primary: "#000000", secondary: "#FFFFFF" },
+  "SSG.COM": { primary: "#FF0050", secondary: null },
+  "G마켓": { primary: "#00C73C", secondary: "#0B2B8E" },
+  "대한항공": { primary: "#003DA5", secondary: null },
+  "쏘카": { primary: "#00B8FF", secondary: null },
+  "도미노": { primary: "#E31837", secondary: "#006491" },
+  "파리바게뜨": { primary: "#0062B8", secondary: null },
+  "투썸플레이스": { primary: "#D4003A", secondary: "#4A4A4A" },
+  "이마트": { primary: "#FFB81C", secondary: null },
+  "베스킨라빈스": { primary: "#FF1D8E", secondary: "#0C1D82" },
+  "넥슨": { primary: "#0C3558", secondary: "#2BB8E0", tertiary: "#C5D629" },
+  "롯데홈쇼핑": { primary: "#E60000", secondary: null },
+  "현대카드": { primary: "#1A1A1A", secondary: null },
+  "현대백화점": { primary: "#2D5A45", secondary: null },
+  "현대자동차": { primary: "#002C5F", secondary: null },
+  "멜론": { primary: "#00CD3C", secondary: null },
+  "T다이렉트샵": { primary: "#3C2CF5", secondary: null },
+};
+
+const BRAND_NAMES = Object.keys(BRAND_COLORS);
+
+/** 텍스트에서 브랜드명을 탐색하여 매칭된 브랜드의 키컬러 힌트 문자열을 반환 */
+function detectBrandColorHint(text: string): string | null {
+  for (const brand of BRAND_NAMES) {
+    if (text.includes(brand)) {
+      const colors = BRAND_COLORS[brand];
+      const parts: string[] = [`Primary: ${colors.primary}`];
+      if (colors.secondary) parts.push(`Secondary: ${colors.secondary}`);
+      if (colors.tertiary) parts.push(`Tertiary: ${colors.tertiary}`);
+      return `이 브랜드(${brand})의 키컬러는 ${parts.join(", ")}입니다. textColor와 bgTreatment를 이 키컬러와 조화롭게 설정해주세요.`;
+    }
+  }
+  return null;
+}
 
 const SYSTEM_PROMPT = `너는 한국 금융사(현대카드) 앱의 CT(콘텐츠스레드) 카드 카피라이터야.
 사용자의 요청에 맞는 카드 콘텐츠를 정확히 3가지 안으로 만들어.
@@ -113,6 +156,12 @@ export function buildRequestBody(userMessage: string, currentVariants?: CTConten
     prompt += `[수정 요청]: ${userMessage}\n\n위 안을 기반으로 수정해서 3가지 새 안을 만들어줘.`;
   } else {
     prompt += `[사용자 요청]: ${userMessage}`;
+  }
+
+  // 브랜드 키컬러 힌트 추가
+  const brandHint = detectBrandColorHint(userMessage);
+  if (brandHint) {
+    prompt += `\n\n[브랜드 키컬러 참고]: ${brandHint}`;
   }
 
   return {

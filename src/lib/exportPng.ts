@@ -131,7 +131,7 @@ export async function exportCtPng(content: CTContent): Promise<void> {
   // 다운로드
   const now = new Date();
   const dateStr = `${String(now.getFullYear()).slice(2)}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
-  const filename = `${dateStr}_CT041_${content.textColor}@3x.png`;
+  const filename = `${dateStr}_CT041_${content.textColor}@3x.webp`;
 
   canvas.toBlob((blob) => {
     if (!blob) return;
@@ -141,5 +141,5 @@ export async function exportCtPng(content: CTContent): Promise<void> {
     a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
-  }, "image/png");
+  }, "image/webp", 0.9);
 }
