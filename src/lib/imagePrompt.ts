@@ -50,7 +50,7 @@ function detectBrandColorHint(text: string): string | null {
       const parts: string[] = [`Primary: ${colors.primary}`];
       if (colors.secondary) parts.push(`Secondary: ${colors.secondary}`);
       if (colors.tertiary) parts.push(`Tertiary: ${colors.tertiary}`);
-      return `이 브랜드(${brand})의 키컬러는 ${parts.join(", ")}입니다. 이미지에 이 컬러 톤을 반영해주세요.`;
+      return `Brand "${brand}" key colors: ${parts.join(", ")}. Use these as subtle accent colors only (e.g. a small prop, lighting tint, or background tone). Do NOT make the entire image this color. Keep the palette natural and balanced. Do NOT render any logos, brand marks, or symbols in the image.`;
     }
   }
   return null;
@@ -403,7 +403,7 @@ function flattenPreset(p: PromptParameters, userRequest: string, copyContext?: C
   lines.push(`- The main subject can span the full frame but should be most prominent in the CENTER to BOTTOM-RIGHT area.`);
 
   lines.push(``);
-  lines.push(`Hard constraints: ${p.constraints.join(". ")}. Absolutely NO text, letters, words, numbers, or typography anywhere in the image.`);
+  lines.push(`Hard constraints: ${p.constraints.join(". ")}. Absolutely NO text, letters, words, numbers, or typography anywhere in the image. NO logos, brand marks, symbols, watermarks, or emblems. NO electronic devices, screens, laptops, tablets, or phones.`);
   lines.push(`Format: Square 1:1, commercial-grade quality, 335×348px card background.`);
 
   // 브랜드 키컬러 힌트 추가
