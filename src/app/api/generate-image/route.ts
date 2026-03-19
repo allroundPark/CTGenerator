@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { buildImagePrompt } from "@/lib/imagePrompt";
+import { buildImagePrompt, detectBrandName } from "@/lib/imagePrompt";
+import { promises as fs } from "fs";
+import path from "path";
 
 // 이미지 생성 모델 (최신 순)
 const IMAGE_MODELS = [
@@ -8,6 +10,84 @@ const IMAGE_MODELS = [
   "gemini-3-pro-image-preview",
 ];
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
+
+/** 브랜드명 → 로고 파일명 매핑 */
+const BRAND_LOGO_MAP: Record<string, string> = {
+  "Amex": "amex",
+  "스타벅스": "starbucks",
+  "마켓컬리": "kurly",
+  "올리브영": "oliveyoung",
+  "GS칼텍스": "gscaltex",
+  "코스트코": "costco",
+  "네이버": "naver",
+  "무신사": "musinsa",
+  "SSG.COM": "ssg",
+  "G마켓": "gmarket",
+  "대한항공": "koreanair",
+  "쏘카": "socar",
+  "도미노": "dominos",
+  "파리바게뜨": "parisbaguette",
+  "투썸플레이스": "twosome",
+  "이마트": "emart",
+  "베스킨라빈스": "baskinrobbins",
+  "넥슨": "nexon",
+  "롯데홈쇼핑": "lottehomeshopping",
+  "현대카드": "hyundaicard",
+  "현대백화점": "hyundaidept",
+  "현대자동차": "hyundaimotor",
+  "멜론": "melon",
+  "T다이렉트샵": "tdirect",
+};
+
+/** public/logos/ 에서 브랜드 로고 파일을 찾아 base64로 반환 */
+async function findBrandLogo(brandName: string): Promise<{ data: string; mimeType: string } | null> {
+  const logosDir = path.join(process.cwd(), "public", "logos");
+  const fileName = BRAND_LOGO_MAP[brandName];
+  if (!fileName) return null;
+
+  const exts = [".png", ".webp", ".jpg", ".jpeg", ".svg"];
+  const mimeMap: Record<string, string> = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".svg": "image/svg+xml" };
+
+  for (const ext of exts) {
+    try {
+      const filePath = path.join(logosDir, fileName + ext);
+      const buffer = await fs.readFile(filePath);
+      return { data: buffer.toString("base64"), mimeType: mimeMap[ext] || "image/png" };
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+const FLASH_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+
+/** Gemini Flash로 로고 포함 의도 판별 */
+async function checkLogoIntent(apiKey: string, userPrompt: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${FLASH_URL}?key=${apiKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: `유저가 이미지 생성을 요청했어. 이 요청에 브랜드 로고나 CI를 이미지에 포함해달라는 의도가 있는지 판단해줘.
+
+유저 요청: "${userPrompt}"
+
+로고/CI 포함 요청의 예: "로고 넣어줘", "브랜드 마크 포함", "CI 넣어서", "로고 있는 버전"
+로고 불필요한 예: "따뜻한 느낌으로", "미니멀하게", "3D로 만들어줘", "컬리 혜택 카드"
+
+JSON으로만 응답: {"needsLogo": true} 또는 {"needsLogo": false}` }] }],
+        generationConfig: { responseMimeType: "application/json" },
+      }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    return JSON.parse(text).needsLogo === true;
+  } catch {
+    return false;
+  }
+}
 
 export async function POST(req: NextRequest) {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -35,6 +115,20 @@ export async function POST(req: NextRequest) {
         parts.push({
           inline_data: { mime_type: img.mimeType, data: img.data },
         });
+      }
+    }
+  }
+
+  // 브랜드 로고 참조 — Gemini가 로고 필요 여부 판단
+  const brandName = detectBrandName(prompt);
+  if (brandName) {
+    const needsLogo = await checkLogoIntent(apiKey, prompt);
+    if (needsLogo) {
+      const logo = await findBrandLogo(brandName);
+      if (logo) {
+        parts[0] = { text: fullPrompt + `\n\nThe attached image is the brand logo for "${brandName}". Incorporate this logo subtly in the bottom-right area of the generated image.` };
+        parts.push({ inline_data: { mime_type: logo.mimeType, data: logo.data } });
+        console.log(`[image-gen] 브랜드 로고 참조: ${brandName}`);
       }
     }
   }

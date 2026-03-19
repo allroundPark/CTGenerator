@@ -33,7 +33,8 @@ const BRAND_NAMES = Object.keys(BRAND_COLORS);
 /** 텍스트에서 브랜드명을 탐색하여 매칭된 브랜드의 키컬러 힌트 문자열을 반환 */
 function detectBrandColorHint(text: string): string | null {
   for (const brand of BRAND_NAMES) {
-    if (text.includes(brand)) {
+    const words = text.split(/\s+/);
+    if (text.includes(brand) || words.some((w) => w.length >= 2 && brand.includes(w))) {
       const colors = BRAND_COLORS[brand];
       const parts: string[] = [`Primary: ${colors.primary}`];
       if (colors.secondary) parts.push(`Secondary: ${colors.secondary}`);

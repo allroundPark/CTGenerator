@@ -340,12 +340,8 @@ export default function Home() {
           foundImageUrl = await generateImage(text, editImages[0], newVariants[0], "edit") || "";
         }
         if (!foundImageUrl) {
-          showStatus("이미지 검색 중...");
-          foundImageUrl = await searchAsset(text) || "";
-          if (!foundImageUrl) {
-            showStatus("AI로 이미지 생성 중...");
-            foundImageUrl = await generateImageFromPrompt(text, newVariants[0]) || "";
-          }
+          showStatus("AI로 이미지 생성 중...");
+          foundImageUrl = await generateImageFromPrompt(text, newVariants[0]) || "";
         }
 
         if (foundImageUrl) {
@@ -622,7 +618,7 @@ export default function Home() {
                     style={{ width: `${subPool.length * 100}%`, transform: `translateX(-${(selSub / subPool.length) * 100}%)` }}
                   >
                     {subPool.map((opt, i) => (
-                      <div key={i} className="h-full flex items-end transition-opacity duration-300" style={{ width: `${100 / subPool.length}%`, opacity: i === selSub ? 1 : 0.3, padding: `${24*SCALE}px` }}>
+                      <div key={i} className="h-full flex items-end transition-opacity duration-300 min-h-full" style={{ width: `${100 / subPool.length}%`, opacity: (!opt.subLine1 && !opt.subLine2) ? 0 : i === selSub ? 1 : 0.3, padding: `${24*SCALE}px` }}>
                         <div style={{ fontSize: 14*SCALE, lineHeight: `${20*SCALE}px`, fontWeight: 700, color: textColor }}>
                           <div>{opt.subLine1}</div>
                           <div>{opt.subLine2}</div>
@@ -847,6 +843,12 @@ function VariateInputSheet({
   const [text, setText] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  const hints: Record<string, string[]> = {
+    copy: ["더 감성적으로", "할인 강조해서", "짧고 임팩트있게", "호기심 유발하게"],
+    sub: ["CTA 느낌으로", "혜택 요약해서", "없이 깔끔하게"],
+    image: ["따뜻한 톤으로", "3D 모델링 느낌", "벡터 일러스트", "미니멀하게", "고급스럽게"],
+  };
+
   return (
     <div className="bg-white border-2 border-blue-400 rounded-xl p-2 shadow-sm">
       <div className="text-[10px] text-blue-500 mb-1 px-1">
@@ -858,7 +860,7 @@ function VariateInputSheet({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSubmit(text); } if (e.key === "Escape") onCancel(); }}
-          placeholder="예: 더 감성적으로, 할인 강조해서..."
+          placeholder={`예: ${hints[field]?.slice(0, 2).join(", ")}...`}
           autoFocus
           rows={1}
           className="flex-1 resize-none outline-none bg-transparent text-sm placeholder:text-gray-300"
@@ -877,6 +879,17 @@ function VariateInputSheet({
             <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
           </svg>
         </button>
+      </div>
+      <div className="flex flex-wrap gap-1 mt-1.5 px-0.5">
+        {hints[field]?.map((h) => (
+          <button
+            key={h}
+            onClick={() => setText((prev) => prev ? `${prev}, ${h}` : h)}
+            className="text-[10px] text-gray-400 bg-gray-50 border border-gray-100 rounded-full px-2 py-0.5 hover:bg-blue-50 hover:text-blue-500 hover:border-blue-200 transition-colors"
+          >
+            {h}
+          </button>
+        ))}
       </div>
     </div>
   );
