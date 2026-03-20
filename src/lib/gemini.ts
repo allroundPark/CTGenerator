@@ -1,4 +1,4 @@
-import { CTContent, CTTextField } from "@/types/ct";
+import { CTContent, CTTextField, BrandContext } from "@/types/ct";
 import { getByteLength, truncateToBytes } from "@/lib/bytes";
 // 브랜드 키컬러 데이터 (data/brand_colors.json 기반)
 const BRAND_COLORS: Record<string, { primary: string; secondary: string | null; tertiary?: string }> = {
@@ -26,6 +26,8 @@ const BRAND_COLORS: Record<string, { primary: string; secondary: string | null; 
   "현대자동차": { primary: "#002C5F", secondary: null },
   "멜론": { primary: "#00CD3C", secondary: null },
   "T다이렉트샵": { primary: "#3C2CF5", secondary: null },
+  "고트럭": { primary: "#F26522", secondary: "#FFFFFF" },
+  "국민비서": { primary: "#2DBCB6", secondary: "#FFFFFF" },
 };
 
 const BRAND_NAMES = Object.keys(BRAND_COLORS);
@@ -67,26 +69,39 @@ const SYSTEM_PROMPT = `너는 한국 금융사(현대카드) 앱의 CT(콘텐츠
 - 조건/자격: "프리미엄 카드 회원이라면"
 - 금융상품: "장기카드대출(카드론)", "자동차담보대출"
 
-### titleLine1(NM2) 패턴
-- 경고형: "놓치면 안 되는" (제휴 브랜드 표준)
-- 장소/상황: "도심 가까이에서", "일본에서 누리는", "오마카세부터 파인다이닝까지"
+### titleLine1(NM2) 패턴 — 후킹이 핵심!
+**중요: "놓치면 안 되는" 같은 뻔한 표현은 피해. 매번 새롭고 구체적인 후킹을 만들어.**
+
+우선순위 높은 후킹 패턴 (적극 활용):
+- 반전/의외: "커피값으로", "택시비보다 싼", "아직도 정가에?"
+- 공감 자극: "월급은 스쳐가는데", "점심 뭐 먹지 고민될 때", "장바구니에 넣어뒀죠?"
+- 숫자 충격: "하루 300원이면", "3명 중 1명이 쓰는", "연 120만원 아끼는 법"
+- 트렌드/시의성: "지금이 딱 제철", "아는 사람만 아는", "딱 한 줄이면 충분"
+- 스토리텔링: "그 카페, 또 갈 거잖아요", "지갑 열기 전에"
+
+기본 패턴 (위 후킹이 안 맞을 때만):
+- 장소/상황: "도심 가까이에서", "일본에서 누리는"
 - 혜택 직접: "70% M포인트 사용", "최대 50만 M포인트를"
 - 브랜드명: "Galaxy S26 Series", "마켓컬리"
 - 대상 지정: "the Red 회원을 위한"
-- 감성: "바쁘고 지친 일상 속", "꽃으로 채우는 일상"
+- 감성: "꽃으로 채우는 일상"
 
 ### titleLine2(NM3) 패턴
-- 감성 CTA: "혜택이 있어요!" (제휴 브랜드 표준)
-- 할인/금액: "코스 메뉴 15% 할인", "최대 1만 2천원 할인 쿠폰"
-- 행동 유도: "미리 예약하고 10% 할인받기", "확인해 보세요!"
+우선순위 높은 패턴 (구체적이고 행동을 유발):
+- 할인/금액 직접: "코스 메뉴 15% 할인", "최대 1만 2천원 할인 쿠폰"
+- 행동 유도: "미리 예약하고 10% 할인받기", "지금 쿠폰 받기"
+- 반전 완성: "호텔 라운지 즐기기" (NM2 반전과 연결), "파인다이닝 할인"
 - 경험: "누리는 완벽한 쉼", "여행을 떠나요"
 - VIP: "VIP 멤버십 제공"
 
-### 주요 조합
-- 제휴 브랜드: NM1="[브랜드] 브랜드 혜택" + NM2="놓치면 안 되는" + NM3="혜택이 있어요!"
-- Amex 다이닝: NM1="Amex 멤버 전용" + NM2="[장소]에서 즐기는" + NM3="[할인율]% 할인"
-- 맞춤 추천: NM1="맞춤 혜택 추천 3종 선물 도착!" + NM2="[브랜드명]" + NM3="[할인 금액]"
-- 호텔: NM1="Amex 호텔 혜택" + NM2="도심 가까이에서" + NM3="누리는 완벽한 쉼"
+피해야 할 패턴:
+- "혜택이 있어요!" → 너무 뻔하고 구체성 없음. 가능하면 구체적 혜택으로 대체
+
+### 주요 조합 (후킹 버전)
+- 제휴 브랜드: NM1="[브랜드] 브랜드 혜택" + NM2="아직도 정가에?" + NM3="최대 50% 캐시백"
+- Amex 다이닝: NM1="Amex 멤버 전용" + NM2="택시비보다 싼" + NM3="파인다이닝 15% 할인"
+- 맞춤 추천: NM1="맞춤 혜택 추천" + NM2="3명 중 1명이 쓰는" + NM3="[브랜드] [할인 금액]"
+- 호텔: NM1="Amex 호텔 혜택" + NM2="커피값으로" + NM3="호텔 라운지 즐기기"
 
 ### 종결 어미 규칙 (매우 중요!)
 반말 절대 금지. 아래 3가지만 사용:
@@ -94,7 +109,8 @@ const SYSTEM_PROMPT = `너는 한국 금융사(현대카드) 앱의 CT(콘텐츠
 2. 해요체: "혜택이 있어요!", "확인해 보세요", "여행을 떠나요"
 3. ~기 종결: "미리 예약하고 10% 할인받기", "찾기"
 
-금지: 반말(~해, ~야, ~지), 합쇼체(~합니다), 물음형(~할까요?)
+금지: 반말(~해, ~야, ~지), 합쇼체(~합니다)
+허용 물음형 (후킹용으로만): "아직도 정가에?", "이 혜택 놓칠 거예요?" 같은 짧은 수사적 질문은 NM2에서 사용 가능
 
 ### 카테고리별 톤
 - 브랜드 혜택: 가벼운, 친근
@@ -118,10 +134,12 @@ const SYSTEM_PROMPT = `너는 한국 금융사(현대카드) 앱의 CT(콘텐츠
 
 기본값: textColor "WT" + gradient dark를 써라.
 
-## 3가지 안의 톤
-- 안 1: 정보 전달형 (명확, 직관적)
-- 안 2: 감성/혜택 강조형 (감성적, 혜택 부각)
-- 안 3: 행동 유도형 (긴급감, CTA)
+## 3가지 안의 톤 — 모든 안이 후킹해야 함!
+첫 생성이 서비스의 첫인상이다. 뻔한 문구는 금지.
+- 안 1: 반전/의외형 (기대를 깨는 구조, "커피값으로 호텔 라운지" 같은)
+- 안 2: 공감/트렌드형 (일상 밀착 + 시의성, "나 얘기인데?" 반응 유도)
+- 안 3: 숫자 임팩트형 (구체적 수치로 즉각 관심, "하루 300원이면")
+3가지 안은 서로 다른 후킹 전략을 써야 하며, 같은 패턴 반복 금지.
 
 ## 이미지 유형 판단 (imageType 필드)
 요청 내용에 따라 적합한 이미지 유형을 판단해서 포함:
@@ -139,7 +157,7 @@ JSON 배열만 반환. 설명 없이 JSON만.
 imageConstraint는 {"fit":"cover","alignX":"center","alignY":"center"}.
 id는 "variant-1", "variant-2", "variant-3".`;
 
-export function buildRequestBody(userMessage: string, currentVariants?: CTContent[]) {
+export function buildRequestBody(userMessage: string, currentVariants?: CTContent[], brandContext?: BrandContext) {
   let prompt = SYSTEM_PROMPT + "\n\n";
 
   // 기존 안이 있으면 컨텍스트로 전달
@@ -159,10 +177,18 @@ export function buildRequestBody(userMessage: string, currentVariants?: CTConten
     prompt += `[사용자 요청]: ${userMessage}`;
   }
 
-  // 브랜드 키컬러 힌트 추가
+  // 브랜드 키컬러 힌트 추가 — 내장 브랜드 우선, 없으면 외부 검색 결과 사용
   const brandHint = detectBrandColorHint(userMessage);
   if (brandHint) {
     prompt += `\n\n[브랜드 키컬러 참고]: ${brandHint}`;
+  } else if (brandContext) {
+    const colorParts = [`Primary: ${brandContext.primaryColor}`];
+    if (brandContext.secondaryColor) colorParts.push(`Secondary: ${brandContext.secondaryColor}`);
+    prompt += `\n\n[브랜드 정보 (웹 검색)]: "${brandContext.brandName}" — ${brandContext.description} (${brandContext.category})`;
+    prompt += `\n키컬러: ${colorParts.join(", ")}. textColor와 bgTreatment를 이 키컬러와 조화롭게 설정해줘.`;
+    if (brandContext.mascotName) {
+      prompt += `\n마스코트: ${brandContext.mascotName}${brandContext.mascotDescription ? ` (${brandContext.mascotDescription})` : ""}`;
+    }
   }
 
   return {
@@ -260,7 +286,8 @@ ${JSON.stringify(context, null, 2)}
 ## 제약사항
 - 각 줄은 반드시 34byte 이내 (한글=2byte, 영문/숫자=1byte)
 - 2줄이 하나의 메시지로 자연스럽게 연결돼야 함
-- 다양한 톤: 정보전달, 감성, 행동유도, 위트 등 섞어줘
+- 다양한 톤: 반전/의외, 공감자극, 숫자임팩트, 트렌드, 스토리텔링 등 섞어줘
+- "놓치면 안 되는 + 혜택이 있어요!" 같은 뻔한 표현은 피해
 - JSON 배열로 반환. 각 항목은 [line1, line2] 형태:
   [["1줄차 대안1", "2줄차 대안1"], ["1줄차 대안2", "2줄차 대안2"], ...]`;
 
@@ -286,7 +313,8 @@ ${JSON.stringify(context, null, 2)}
 ## 제약사항
 - 각 대안은 반드시 34byte 이내 (한글=2byte, 영문/숫자=1byte)
 - 나머지 필드들과 자연스럽게 어울려야 함
-- 다양한 톤: 정보전달, 감성, 행동유도, 위트 등 섞어줘
+- 다양한 톤: 반전/의외, 공감자극, 숫자임팩트, 트렌드, 스토리텔링 등 섞어줘
+- "놓치면 안 되는", "혜택이 있어요!" 같은 뻔한 표현은 피해
 - JSON 문자열 배열만 반환: ["대안1", "대안2", ...]`;
 
   return {

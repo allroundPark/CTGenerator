@@ -37,6 +37,17 @@ const BRAND_LOGO_MAP: Record<string, string> = {
   "현대자동차": "hyundaimotor",
   "멜론": "melon",
   "T다이렉트샵": "tdirect",
+  "고트럭": "gotruck",
+  "국민비서": "gukminbiseo",
+};
+
+/** 마스코트 캐릭터가 있는 브랜드 — 해당 브랜드 요청 시 항상 레퍼런스로 포함 */
+const BRAND_MASCOT_MAP: Record<string, { file: string; name: string; description: string }> = {
+  "국민비서": {
+    file: "gukminbiseo",
+    name: "국민비서 캐릭터",
+    description: "A cute teal/mint-colored rabbit character wearing a white outfit with a name tag. Round face with pink cheeks, big happy eyes, and long rabbit ears with yellow inner color. The character has a friendly, approachable appearance.",
+  },
 };
 
 /** public/logos/ 에서 브랜드 로고 파일을 찾아 base64로 반환 */
@@ -96,14 +107,22 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { prompt, referenceImages, copyContext, imageType } = body;
+  const { prompt, referenceImages, copyContext, imageType, brandContext } = body;
 
   if (!prompt) {
     return NextResponse.json({ error: "prompt is required" }, { status: 400 });
   }
 
+  // 외부 브랜드 컨텍스트를 imagePrompt에 전달
+  const externalBrand = brandContext ? {
+    brandName: brandContext.brandName,
+    primaryColor: brandContext.primaryColor,
+    secondaryColor: brandContext.secondaryColor,
+    mascotDescription: brandContext.mascotDescription,
+  } : undefined;
+
   // Step 1: 프리셋 기반 구조화 프롬프트 빌드
-  const fullPrompt = buildImagePrompt(prompt, imageType, copyContext);
+  const fullPrompt = buildImagePrompt(prompt, imageType, copyContext, externalBrand);
   console.log(`[image-gen] imageType=${imageType || "default"}, prompt length=${fullPrompt.length}`);
 
   const parts: Array<Record<string, unknown>> = [{ text: fullPrompt }];
@@ -119,14 +138,34 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 브랜드 로고 참조 — Gemini가 로고 필요 여부 판단
+  // 마스코트 이미지 (웹 검색으로 찾은 것)
+  if (brandContext?.mascotImage?.data) {
+    parts[0] = { text: fullPrompt + `\n\nThe attached image is the official mascot/character "${brandContext.mascotName || "character"}" for "${brandContext.brandName}". Use it as a visual reference to include this character naturally in the generated image. Maintain the character's colors, proportions, and recognizable features.` };
+    parts.push({
+      inline_data: { mime_type: brandContext.mascotImage.mimeType, data: brandContext.mascotImage.data },
+    });
+    console.log(`[image-gen] 마스코트 이미지 참조: ${brandContext.brandName} - ${brandContext.mascotName}`);
+  }
+
+  // 마스코트 캐릭터 참조 — 해당 브랜드 요청 시 항상 포함
   const brandName = detectBrandName(prompt);
-  if (brandName) {
+  if (brandName && BRAND_MASCOT_MAP[brandName]) {
+    const mascot = BRAND_MASCOT_MAP[brandName];
+    const mascotImage = await findBrandLogo(brandName);
+    if (mascotImage) {
+      parts[0] = { text: (parts[0] as { text: string }).text + `\n\nThe attached image is the official mascot character "${mascot.name}" for "${brandName}". ${mascot.description}. Include this character naturally in the generated image — it should be a recognizable element in the scene. Maintain the character's exact colors, proportions, and features.` };
+      parts.push({ inline_data: { mime_type: mascotImage.mimeType, data: mascotImage.data } });
+      console.log(`[image-gen] 마스코트 캐릭터 참조: ${brandName} - ${mascot.name}`);
+    }
+  }
+
+  // 브랜드 로고 참조 — Gemini가 로고 필요 여부 판단 (마스코트 브랜드 제외)
+  if (brandName && !BRAND_MASCOT_MAP[brandName]) {
     const needsLogo = await checkLogoIntent(apiKey, prompt);
     if (needsLogo) {
       const logo = await findBrandLogo(brandName);
       if (logo) {
-        parts[0] = { text: fullPrompt + `\n\nThe attached image is the brand logo for "${brandName}". Incorporate this logo subtly in the bottom-right area of the generated image.` };
+        parts[0] = { text: (parts[0] as { text: string }).text + `\n\nThe attached image is the brand logo for "${brandName}". Incorporate this logo subtly in the bottom-right area of the generated image.` };
         parts.push({ inline_data: { mime_type: logo.mimeType, data: logo.data } });
         console.log(`[image-gen] 브랜드 로고 참조: ${brandName}`);
       }

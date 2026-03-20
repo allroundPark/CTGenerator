@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
-import { CTContent, AttachedImage, BgTreatment, ImageConstraint, CTTextField } from "@/types/ct";
+import { CTContent, AttachedImage, BgTreatment, ImageConstraint, CTTextField, BrandContext } from "@/types/ct";
 import ChatInput from "@/components/ChatInput";
 import DeviceViewer from "@/components/DeviceViewer";
+import { exportCtPng } from "@/lib/exportPng";
 
 // ── 필드 풀 타입 ──
 interface CopyOption {
@@ -52,6 +53,9 @@ export default function Home() {
 
   // 변주 입력 모드 (+ 버튼 → 입력창 활성화)
   const [variateInput, setVariateInput] = useState<"copy" | "sub" | "image" | null>(null);
+
+  // 브랜드 컨텍스트 (웹 검색 결과)
+  const [brandCtx, setBrandCtx] = useState<BrandContext | null>(null);
 
   // 첫 생성 안내
   const [showHint, setShowHint] = useState(true);
@@ -234,7 +238,7 @@ export default function Home() {
             addImageToPool(directImageUrl);
             foundImageUrl = directImageUrl;
           } else {
-            foundImageUrl = await generateImageFromPrompt(prompt, composite) || "";
+            foundImageUrl = await generateImageFromPrompt(prompt, composite, brandCtx) || "";
           }
           if (foundImageUrl && foundImageUrl !== directImageUrl) {
             addImageToPool(foundImageUrl, composite.textColor, composite.bgTreatment);
@@ -292,20 +296,37 @@ export default function Home() {
         setSelCopy(0);
         setSelSub(0);
         setSelImage(0);
+        setBrandCtx(null);
       }
 
       // 첫 생성 또는 새 주제 전체 생성
-      showStatus("문구 생성 중...");
+      showStatus("브랜드 검색 & 문구 생성 중...");
 
+      // Step 1: 브랜드 검색 + 이미지 분석 (병렬)
       const firstApplyFile = applyImages[0]?.file;
-      const [genRes, imageAnalysis] = await Promise.all([
-        fetch("/api/generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: text }),
-        }),
+      const [brandSearchResult, imageAnalysis] = await Promise.all([
+        searchBrand(text),
         firstApplyFile ? analyzeImage(firstApplyFile) : Promise.resolve(null),
       ]);
+
+      // 브랜드 검색 결과 저장
+      let activeBrandCtx = brandSearchResult;
+      if (activeBrandCtx) {
+        setBrandCtx(activeBrandCtx);
+        showStatus(`"${activeBrandCtx.brandName}" 정보 확인! 문구 생성 중...`);
+      } else {
+        showStatus("문구 생성 중...");
+      }
+
+      // Step 2: 문구 생성 (brandContext 포함)
+      const genRes = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: text,
+          ...(activeBrandCtx ? { brandContext: activeBrandCtx } : {}),
+        }),
+      });
 
       if (!genRes.ok) {
         const err = await genRes.json().catch(() => ({ error: "서버 오류" }));
@@ -340,8 +361,8 @@ export default function Home() {
           foundImageUrl = await generateImage(text, editImages[0], newVariants[0], "edit") || "";
         }
         if (!foundImageUrl) {
-          showStatus("AI로 이미지 생성 중...");
-          foundImageUrl = await generateImageFromPrompt(text, newVariants[0]) || "";
+          showStatus(activeBrandCtx?.mascotImage ? "마스코트 참고하여 이미지 생성 중..." : "AI로 이미지 생성 중...");
+          foundImageUrl = await generateImageFromPrompt(text, newVariants[0], activeBrandCtx) || "";
         }
 
         if (foundImageUrl) {
@@ -405,7 +426,7 @@ export default function Home() {
       } else {
         showStatus("새 이미지 생성 중...");
         const prompt = userPrompt || `${composite.label} ${composite.titleLine1} ${composite.titleLine2}`;
-        const imgUrl = await generateImageFromPrompt(prompt, composite);
+        const imgUrl = await generateImageFromPrompt(prompt, composite, brandCtx);
         if (imgUrl) addImageToPool(imgUrl);
       }
     } catch {
@@ -475,7 +496,20 @@ export default function Home() {
     } catch { return null; }
   }
 
-  async function generateImageFromPrompt(prompt: string, variant: CTContent): Promise<string | null> {
+  async function searchBrand(query: string): Promise<BrandContext | null> {
+    try {
+      const res = await fetch("/api/search-brand", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.found ? data as BrandContext : null;
+    } catch { return null; }
+  }
+
+  async function generateImageFromPrompt(prompt: string, variant: CTContent, brandContext?: BrandContext | null): Promise<string | null> {
     try {
       const res = await fetch("/api/generate-image", {
         method: "POST",
@@ -484,6 +518,7 @@ export default function Home() {
           prompt,
           imageType: variant.imageType || "",
           copyContext: { nm1_label: variant.label, nm2_title: variant.titleLine1, nm3_desc: variant.titleLine2 },
+          ...(brandContext ? { brandContext } : {}),
         }),
       });
       if (!res.ok) return null;
@@ -500,7 +535,7 @@ export default function Home() {
       setIsLoading(true);
       showStatus("이미지 생성 중...");
       try {
-        const imgUrl = await generateImageFromPrompt(text, composite);
+        const imgUrl = await generateImageFromPrompt(text, composite, brandCtx);
         if (imgUrl) addImageToPool(imgUrl);
         showStatus(imgUrl ? "이미지 추가 완료!" : "이미지 생성에 실패했어요.");
       } finally {
@@ -687,6 +722,24 @@ export default function Home() {
                 <VariateButton label="상단 문구" onClick={() => handleVariateClick("copy")} loading={variatingField === "copy"} count={copyPool.length} />
                 <VariateButton label="이미지" onClick={() => handleVariateClick("image")} loading={variatingField === "image"} count={imagePool.length} />
                 <VariateButton label="하단 문구" onClick={() => handleVariateClick("sub")} loading={variatingField === "sub"} count={subPool.length} />
+              </div>
+            )}
+
+            {/* 저장 버튼 (콘텐츠 있을 때) */}
+            {hasContent && (
+              <div className="flex justify-end">
+                <button
+                  onClick={() => exportCtPng(composite)}
+                  className="flex items-center gap-1 px-3 py-1 text-[11px] text-gray-400 hover:text-gray-600 transition-colors"
+                  title="이미지 저장 (WebP @3x)"
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                  <span>이미지 저장</span>
+                </button>
               </div>
             )}
 

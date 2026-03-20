@@ -26,6 +26,8 @@ const BRAND_COLORS: Record<string, { primary: string; secondary: string | null; 
   "현대자동차": { primary: "#002C5F", secondary: null },
   "멜론": { primary: "#00CD3C", secondary: null },
   "T다이렉트샵": { primary: "#3C2CF5", secondary: null },
+  "고트럭": { primary: "#F26522", secondary: "#FFFFFF" },
+  "국민비서": { primary: "#2DBCB6", secondary: "#FFFFFF" },
 };
 
 const BRAND_NAMES = Object.keys(BRAND_COLORS);
@@ -39,6 +41,11 @@ export function detectBrandName(text: string): string | null {
     }
   }
   return null;
+}
+
+/** 텍스트에 등록된 브랜드가 있는지 확인 */
+export function isKnownBrand(text: string): boolean {
+  return detectBrandName(text) !== null;
 }
 
 /** 텍스트에서 브랜드명을 탐색하여 매칭된 브랜드의 키컬러 힌트 문자열을 반환 */
@@ -416,19 +423,35 @@ function flattenPreset(p: PromptParameters, userRequest: string, copyContext?: C
   return lines.join("\n");
 }
 
+interface ExternalBrandContext {
+  brandName: string;
+  primaryColor: string;
+  secondaryColor?: string | null;
+  mascotDescription?: string | null;
+}
+
 export function buildImagePrompt(
   userRequest: string,
   imageType?: string,
-  copyContext?: CopyContext
+  copyContext?: CopyContext,
+  externalBrand?: ExternalBrandContext
 ): string {
   const type = imageType || "PRODUCTFOCUSED";
   const presetKey = selectPresetKey(type, userRequest);
-  const preset = PRESETS[presetKey];
+  const preset = PRESETS[presetKey] || PRESETS.PRODUCTFOCUSED_food;
 
-  if (!preset) {
-    // fallback: 기본 프리셋
-    return flattenPreset(PRESETS.PRODUCTFOCUSED_food, userRequest, copyContext);
+  let prompt = flattenPreset(preset, userRequest, copyContext);
+
+  // 외부 브랜드 컨텍스트 (웹 검색으로 찾은 미등록 브랜드)
+  if (externalBrand && !detectBrandName(userRequest)) {
+    const colorParts = [`Primary: ${externalBrand.primaryColor}`];
+    if (externalBrand.secondaryColor) colorParts.push(`Secondary: ${externalBrand.secondaryColor}`);
+    prompt += `\n\nBrand "${externalBrand.brandName}" key colors: ${colorParts.join(", ")}. Use these as subtle accent colors only (e.g. a small prop, lighting tint, or background tone). Do NOT make the entire image this color. Keep the palette natural and balanced. Do NOT render any logos, brand marks, or symbols in the image.`;
+
+    if (externalBrand.mascotDescription) {
+      prompt += `\n\nThis brand has a mascot/character: ${externalBrand.mascotDescription}. If a reference image of the mascot is attached, use it as style/appearance reference to include the character naturally in the scene.`;
+    }
   }
 
-  return flattenPreset(preset, userRequest, copyContext);
+  return prompt;
 }

@@ -71,6 +71,18 @@ export type GenerationStatus =
   | "마무리 중..."
   | null;
 
+// 웹 검색으로 찾은 브랜드 정보
+export interface BrandContext {
+  brandName: string;
+  description: string;
+  category: string;
+  primaryColor: string;
+  secondaryColor: string | null;
+  mascotName: string | null;
+  mascotDescription: string | null;
+  mascotImage: { data: string; mimeType: string } | null;
+}
+
 // 채팅 메시지
 export interface ChatMessage {
   id: string;
