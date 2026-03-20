@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { CTContent, CTTextField, CT_BASE_WIDTH, CT_BASE_HEIGHT } from "@/types/ct";
 import CTCard from "./CTCard";
 import ReportModal from "./ReportModal";
@@ -30,6 +30,19 @@ type Theme = "dark" | "light";
 export default function DeviceViewer({ content, onFieldClick, onImageDrag, scale, skeleton, cropRatio }: DeviceViewerProps) {
   const [theme, setTheme] = useState<Theme>("light");
   const [showReport, setShowReport] = useState(false);
+  const [showTooltip, setShowTooltip] = useState(false);
+
+  useEffect(() => {
+    const key = "ct_tooltip_seen";
+    if (typeof window !== "undefined" && !localStorage.getItem(key)) {
+      setShowTooltip(true);
+      const timer = setTimeout(() => {
+        setShowTooltip(false);
+        localStorage.setItem(key, "1");
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
   const displayScale = scale ?? 0.85;
   const displayWidth = MOCKUP.width * displayScale;
@@ -108,6 +121,27 @@ export default function DeviceViewer({ content, onFieldClick, onImageDrag, scale
           <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>
         </svg>
       </button>
+
+      {/* 첫 진입 툴팁 */}
+      {showTooltip && (
+        <div
+          className="absolute -right-10 top-0 w-max animate-fade-in"
+          onClick={() => { setShowTooltip(false); localStorage.setItem("ct_tooltip_seen", "1"); }}
+        >
+          <div className="relative">
+            {/* 다크모드 툴팁 */}
+            <div className="absolute right-9 top-4 bg-gray-800 text-white text-[10px] px-2.5 py-1.5 rounded-lg whitespace-nowrap shadow-lg" style={{ transform: "translateX(-4px)" }}>
+              다크/라이트 전환
+              <div className="absolute right-[-4px] top-1/2 -translate-y-1/2 w-0 h-0 border-t-4 border-b-4 border-l-4 border-transparent border-l-gray-800" />
+            </div>
+            {/* 리포트 툴팁 */}
+            <div className="absolute right-9 top-14 bg-gray-800 text-white text-[10px] px-2.5 py-1.5 rounded-lg whitespace-nowrap shadow-lg" style={{ transform: "translateX(-4px)" }}>
+              피드백 리포트
+              <div className="absolute right-[-4px] top-1/2 -translate-y-1/2 w-0 h-0 border-t-4 border-b-4 border-l-4 border-transparent border-l-gray-800" />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 리포트 모달 */}
       {showReport && (
