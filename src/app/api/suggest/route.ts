@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { field, currentContent } = body;
+  const { field, currentContent, hint } = body;
 
   if (!field || !currentContent) {
     return NextResponse.json({ error: "field and currentContent are required" }, { status: 400 });
@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     const geminiRes = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildSuggestBody(field, currentContent)),
+      body: JSON.stringify(buildSuggestBody(field, currentContent, 5, hint)),
     });
 
     if (!geminiRes.ok) {
@@ -37,8 +37,8 @@ export async function POST(req: NextRequest) {
     }
 
     if (isGroupField(field)) {
-      const groupSuggestions = parseGroupSuggestResponse(rawText);
-      return NextResponse.json({ groupSuggestions });
+      const suggestions = parseGroupSuggestResponse(rawText);
+      return NextResponse.json({ suggestions });
     } else {
       const suggestions = parseSuggestResponse(rawText);
       return NextResponse.json({ suggestions });

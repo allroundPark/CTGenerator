@@ -276,7 +276,7 @@ export default function Home() {
           const res = await fetch("/api/suggest", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ field: "title", content: composite, hint: text }),
+            body: JSON.stringify({ field: "title", currentContent: composite, hint: text }),
           });
           if (res.ok) {
             const data = await res.json();
@@ -297,7 +297,7 @@ export default function Home() {
           const res = await fetch("/api/suggest", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ field: "sub", content: composite, hint: text }),
+            body: JSON.stringify({ field: "sub", currentContent: composite, hint: text }),
           });
           if (res.ok) {
             const data = await res.json();
@@ -424,7 +424,7 @@ export default function Home() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             field: field === "copy" ? "title" : "sub",
-            content: composite,
+            currentContent: composite,
             ...(userPrompt ? { hint: userPrompt } : {}),
           }),
         });

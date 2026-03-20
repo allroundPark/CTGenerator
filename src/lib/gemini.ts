@@ -257,7 +257,7 @@ export function isGroupField(field: CTTextField): field is "title" | "sub" {
   return field === "title" || field === "sub";
 }
 
-export function buildSuggestBody(field: CTTextField, content: CTContent, count = 5) {
+export function buildSuggestBody(field: CTTextField, content: CTContent, count = 5, hint?: string) {
   const context = {
     label: content.label,
     titleLine1: content.titleLine1,
@@ -289,7 +289,7 @@ ${JSON.stringify(context, null, 2)}
 - 다양한 톤: 반전/의외, 공감자극, 숫자임팩트, 트렌드, 스토리텔링 등 섞어줘
 - "놓치면 안 되는 + 혜택이 있어요!" 같은 뻔한 표현은 피해
 - JSON 배열로 반환. 각 항목은 [line1, line2] 형태:
-  [["1줄차 대안1", "2줄차 대안1"], ["1줄차 대안2", "2줄차 대안2"], ...]`;
+  [["1줄차 대안1", "2줄차 대안1"], ["1줄차 대안2", "2줄차 대안2"], ...]` + (hint ? `\n\n[유저 추가 요청]: ${hint}` : "");
 
     return {
       contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -315,7 +315,7 @@ ${JSON.stringify(context, null, 2)}
 - 나머지 필드들과 자연스럽게 어울려야 함
 - 다양한 톤: 반전/의외, 공감자극, 숫자임팩트, 트렌드, 스토리텔링 등 섞어줘
 - "놓치면 안 되는", "혜택이 있어요!" 같은 뻔한 표현은 피해
-- JSON 문자열 배열만 반환: ["대안1", "대안2", ...]`;
+- JSON 문자열 배열만 반환: ["대안1", "대안2", ...]` + (hint ? `\n\n[유저 추가 요청]: ${hint}` : "");
 
   return {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
