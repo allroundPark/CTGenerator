@@ -482,17 +482,34 @@ interface ExternalBrandContext {
   serviceCharacteristics?: string | null;
 }
 
+// 이미지 다양성을 위한 variation 힌트
+const VARIATION_HINTS = [
+  // variation 0: 기본 — 정면/45도, 표준 구도
+  "",
+  // variation 1: 클로즈업, 디테일 포커스
+  "\n\nVARIATION DIRECTIVE: Use a CLOSE-UP or MACRO perspective. Focus tightly on one key detail or element. Shallow depth of field with strong bokeh background. The subject should fill 60-80% of the frame. Use a different camera angle than a standard front view — try overhead, 30-degree low angle, or extreme close-up.",
+  // variation 2: 와이드샷, 환경/공간 강조
+  "\n\nVARIATION DIRECTIVE: Use a WIDE or ENVIRONMENTAL shot. Show the broader context, space, or scene around the subject. The subject should be smaller (30-40% of frame) with rich environmental storytelling. Try a different perspective — bird's eye view, wide establishing shot, or dramatic low angle with leading lines.",
+];
+
 export function buildImagePrompt(
   userRequest: string,
   imageType?: string,
   copyContext?: CopyContext,
-  externalBrand?: ExternalBrandContext
+  externalBrand?: ExternalBrandContext,
+  variation?: number
 ): string {
   const type = imageType || "PRODUCTFOCUSED";
   const presetKey = selectPresetKey(type, userRequest);
   const preset = PRESETS[presetKey] || PRESETS.PRODUCTFOCUSED_food;
 
   let prompt = flattenPreset(preset, userRequest, copyContext);
+
+  // variation별 구도/앵글 다양성
+  const variationIdx = variation ?? 0;
+  if (variationIdx > 0 && variationIdx < VARIATION_HINTS.length) {
+    prompt += VARIATION_HINTS[variationIdx];
+  }
 
   // 외부 브랜드 컨텍스트 — 내장 브랜드여도 서비스 설명은 항상 활용
   if (externalBrand) {

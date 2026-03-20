@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { prompt, referenceImages, copyContext, imageType, brandContext } = body;
+  const { prompt, referenceImages, copyContext, imageType, brandContext, variation } = body;
 
   if (!prompt) {
     return NextResponse.json({ error: "prompt is required" }, { status: 400 });
@@ -124,9 +124,9 @@ export async function POST(req: NextRequest) {
     serviceCharacteristics: brandContext.serviceCharacteristics,
   } : undefined;
 
-  // Step 1: 프리셋 기반 구조화 프롬프트 빌드
-  const fullPrompt = buildImagePrompt(prompt, imageType, copyContext, externalBrand);
-  console.log(`[image-gen] imageType=${imageType || "default"}, prompt length=${fullPrompt.length}`);
+  // Step 1: 프리셋 기반 구조화 프롬프트 빌드 (variation으로 구도 다양성)
+  const fullPrompt = buildImagePrompt(prompt, imageType, copyContext, externalBrand, variation);
+  console.log(`[image-gen] imageType=${imageType || "default"}, variation=${variation ?? 0}, prompt length=${fullPrompt.length}`);
 
   const parts: Array<Record<string, unknown>> = [{ text: fullPrompt }];
 

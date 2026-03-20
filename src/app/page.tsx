@@ -409,32 +409,43 @@ export default function Home() {
         brand_context: activeBrandCtx ? { brandName: activeBrandCtx.brandName, category: activeBrandCtx.category, primaryColor: activeBrandCtx.primaryColor } : null,
       });
 
-      // 이미지 처리
+      // 이미지 처리 — 3장 순차 생성, variation으로 구도 다양성 + 각 variant copyContext
       if (!directImageUrl) {
-        let foundImageUrl = "";
+        const IMAGE_COUNT = 3;
+        let generatedCount = 0;
 
+        // 유저 첨부 이미지를 base64로 변환 (ref/edit용)
+        let attachedRefData: { data: string; mimeType: string }[] | undefined;
         if (refImages.length > 0) {
-          showStatus("참고 이미지 기반 생성 중...");
-          foundImageUrl = await generateImage(text, refImages[0], newVariants[0], "reference") || "";
-        }
-        if (!foundImageUrl && editImages.length > 0) {
-          showStatus("이미지 편집 중...");
-          foundImageUrl = await generateImage(text, editImages[0], newVariants[0], "edit") || "";
-        }
-        if (!foundImageUrl) {
-          showStatus(activeBrandCtx?.mascotImage ? "마스코트 참고하여 이미지 생성 중..." : "AI로 이미지 생성 중...");
-          foundImageUrl = await generateImageFromPrompt(text, newVariants[0], activeBrandCtx) || "";
+          const b64 = await fileToBase64(refImages[0].file);
+          attachedRefData = [{ data: b64, mimeType: refImages[0].file.type }];
+        } else if (editImages.length > 0) {
+          const b64 = await fileToBase64(editImages[0].file);
+          attachedRefData = [{ data: b64, mimeType: editImages[0].file.type }];
         }
 
-        if (foundImageUrl) {
-          addImageToPool(foundImageUrl, newVariants[0].textColor, newVariants[0].bgTreatment);
-          logToSupabase({ message: text, intent: "image_generated", image_generated: true, image_type: newVariants[0]?.imageType || null });
+        for (let i = 0; i < IMAGE_COUNT; i++) {
+          const variant = newVariants[i] || newVariants[0];
+          showStatus(`이미지 생성 중... (${i + 1}/${IMAGE_COUNT})`);
+
+          // 모든 장에 첨부 이미지를 ref로 전달 + variation으로 구도 변경
+          const imgUrl = await generateImageFromPrompt(text, variant, activeBrandCtx, i, attachedRefData) || "";
+
+          if (imgUrl) {
+            addImageToPool(imgUrl, variant.textColor, variant.bgTreatment);
+            generatedCount++;
+            if (i === 0) {
+              logToSupabase({ message: text, intent: "image_generated", image_generated: true, image_type: variant.imageType || null });
+            }
+          }
         }
+
+        showStatus(generatedCount > 0
+          ? `이미지 ${generatedCount}장 생성 완료! 각 영역을 넘기면서 조합해보세요.`
+          : "문구는 완성! 이미지를 첨부하거나 생성 요청해보세요.");
+      } else {
+        showStatus("완성! 각 영역을 넘기면서 조합해보세요.");
       }
-
-      showStatus(imagePool.length > 0 || directImageUrl
-        ? "완성! 각 영역을 넘기면서 조합해보세요."
-        : "문구는 완성! 이미지를 첨부하거나 생성 요청해보세요.");
     } catch (e) {
       showStatus(`오류: ${e instanceof Error ? e.message : "알 수 없는 오류"}`);
     } finally {
@@ -573,7 +584,7 @@ export default function Home() {
     } catch { return null; }
   }
 
-  async function generateImageFromPrompt(prompt: string, variant: CTContent, brandContext?: BrandContext | null): Promise<string | null> {
+  async function generateImageFromPrompt(prompt: string, variant: CTContent, brandContext?: BrandContext | null, variation?: number, referenceImages?: { data: string; mimeType: string }[]): Promise<string | null> {
     try {
       const res = await fetch("/api/generate-image", {
         method: "POST",
@@ -583,6 +594,8 @@ export default function Home() {
           imageType: variant.imageType || "",
           copyContext: { nm1_label: variant.label, nm2_title: variant.titleLine1, nm3_desc: variant.titleLine2 },
           ...(brandContext ? { brandContext } : {}),
+          ...(variation !== undefined ? { variation } : {}),
+          ...(referenceImages?.length ? { referenceImages } : {}),
         }),
       });
       if (!res.ok) return null;
