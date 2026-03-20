@@ -1,13 +1,15 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { CTContent, AttachedImage, BgTreatment, ImageConstraint, CTTextField, BrandContext } from "@/types/ct";
 import ChatInput from "@/components/ChatInput";
 import DeviceViewer from "@/components/DeviceViewer";
+import ApiKeySetup from "@/components/ApiKeySetup";
 import { exportCtPng } from "@/lib/exportPng";
 import { isKnownBrand, getKnownBrandContext } from "@/lib/imagePrompt";
 import { supabase } from "@/lib/supabase";
 import { getDeviceId } from "@/lib/deviceId";
+import { loadKey, hasStoredKey, isWorkingGroup, clearKey } from "@/lib/apiKey";
 
 // ── 필드 풀 타입 ──
 interface CopyOption {
@@ -35,6 +37,39 @@ const EMPTY_CONTENT: CTContent = {
 };
 
 export default function Home() {
+  // API 키 상태
+  const [apiKeyReady, setApiKeyReady] = useState<boolean | null>(null); // null=로딩중
+  const apiKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      if (typeof window === "undefined") return;
+      if (isWorkingGroup()) {
+        apiKeyRef.current = null; // 서버 env 사용
+        setApiKeyReady(true);
+        return;
+      }
+      if (hasStoredKey()) {
+        const key = await loadKey();
+        if (key) {
+          apiKeyRef.current = key;
+          setApiKeyReady(true);
+          return;
+        }
+      }
+      setApiKeyReady(false);
+    })();
+  }, []);
+
+  // API 키를 포함한 fetch wrapper
+  const apiFetch = useCallback((url: string, init?: RequestInit) => {
+    const headers = new Headers(init?.headers);
+    if (apiKeyRef.current) {
+      headers.set("x-api-key", apiKeyRef.current);
+    }
+    return fetch(url, { ...init, headers });
+  }, []);
+
   // 필드 풀
   const [copyPool, setCopyPool] = useState<CopyOption[]>([]);
   const [subPool, setSubPool] = useState<SubOption[]>([]);
@@ -232,7 +267,7 @@ export default function Home() {
       // 후속 요청: 의도 분류 후 해당 풀만 추가
       if (hasContent) {
         showStatus("요청 분석 중...");
-        const intentRes = await fetch("/api/classify-intent", {
+        const intentRes = await apiFetch("/api/classify-intent", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ message: text, currentContent: composite }),
@@ -268,7 +303,7 @@ export default function Home() {
             const editPrompt = currentImgUrl
               ? `현재 이미지를 기반으로 수정해줘: ${text}`
               : prompt;
-            const res = await fetch("/api/generate-image", {
+            const res = await apiFetch("/api/generate-image", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -293,7 +328,7 @@ export default function Home() {
 
         if (intent === "copy") {
           showStatus("상단 문구 생성 중...");
-          const res = await fetch("/api/suggest", {
+          const res = await apiFetch("/api/suggest", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ field: "title", currentContent: composite, hint: text }),
@@ -314,7 +349,7 @@ export default function Home() {
 
         if (intent === "sub") {
           showStatus("하단 문구 생성 중...");
-          const res = await fetch("/api/suggest", {
+          const res = await apiFetch("/api/suggest", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ field: "sub", currentContent: composite, hint: text }),
@@ -367,7 +402,7 @@ export default function Home() {
       }
 
       // Step 2: 문구 생성 (brandContext 포함)
-      const genRes = await fetch("/api/generate", {
+      const genRes = await apiFetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -468,7 +503,7 @@ export default function Home() {
 
     try {
       if (field === "copy" || field === "sub") {
-        const res = await fetch("/api/suggest", {
+        const res = await apiFetch("/api/suggest", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -523,7 +558,7 @@ export default function Home() {
     try {
       const formData = new FormData();
       formData.append("image", file);
-      const res = await fetch("/api/analyze-image", { method: "POST", body: formData });
+      const res = await apiFetch("/api/analyze-image", { method: "POST", body: formData });
       if (!res.ok) return null;
       return await res.json();
     } catch { return null; }
@@ -540,7 +575,7 @@ export default function Home() {
       const prompt = mode === "reference"
         ? `${text}. 첨부된 이미지의 스타일과 분위기를 참고해서 새로운 이미지를 생성해줘.`
         : `${text}. 첨부된 이미지를 카드 배경에 적합하도록 편집/보정해줘.`;
-      const res = await fetch("/api/generate-image", {
+      const res = await apiFetch("/api/generate-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -573,7 +608,7 @@ export default function Home() {
 
   async function searchBrand(query: string): Promise<BrandContext | null> {
     try {
-      const res = await fetch("/api/search-brand", {
+      const res = await apiFetch("/api/search-brand", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query }),
@@ -586,7 +621,7 @@ export default function Home() {
 
   async function generateImageFromPrompt(prompt: string, variant: CTContent, brandContext?: BrandContext | null, variation?: number, referenceImages?: { data: string; mimeType: string }[]): Promise<string | null> {
     try {
-      const res = await fetch("/api/generate-image", {
+      const res = await apiFetch("/api/generate-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -632,6 +667,25 @@ export default function Home() {
     "현대카드 Boutique 소개",
     "자동차담보대출 안내",
   ];
+
+  // API 키 로딩 중
+  if (apiKeyReady === null) {
+    return <div className="h-[100dvh] flex items-center justify-center bg-gray-200"><div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" /></div>;
+  }
+
+  // API 키 미설정 → 설정 화면
+  if (!apiKeyReady) {
+    return (
+      <ApiKeySetup onComplete={async () => {
+        if (isWorkingGroup()) {
+          apiKeyRef.current = null;
+        } else {
+          apiKeyRef.current = await loadKey();
+        }
+        setApiKeyReady(true);
+      }} />
+    );
+  }
 
   return (
     <div className="h-[100dvh] flex items-center justify-center bg-gray-200">

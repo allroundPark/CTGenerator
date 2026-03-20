@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getApiKey } from "@/lib/getApiKey";
 import { buildImagePrompt, detectBrandName } from "@/lib/imagePrompt";
 import { promises as fs } from "fs";
 import path from "path";
@@ -101,9 +102,9 @@ JSON으로만 응답: {"needsLogo": true} 또는 {"needsLogo": false}` }] }],
 }
 
 export async function POST(req: NextRequest) {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = getApiKey(req);
   if (!apiKey) {
-    return NextResponse.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
+    return NextResponse.json({ error: "API key not configured" }, { status: 500 });
   }
 
   const body = await req.json();
