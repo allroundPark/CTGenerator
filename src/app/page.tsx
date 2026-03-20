@@ -227,7 +227,7 @@ export default function Home() {
         const { intent } = await intentRes.json();
 
         if (intent === "image") {
-          showStatus("이미지 생성 중...");
+          showStatus("이미지 수정 중...");
           const prompt = text || `${composite.label} ${composite.titleLine1} ${composite.titleLine2}`;
           let foundImageUrl = "";
           if (refImages.length > 0) {
@@ -238,7 +238,31 @@ export default function Home() {
             addImageToPool(directImageUrl);
             foundImageUrl = directImageUrl;
           } else {
-            foundImageUrl = await generateImageFromPrompt(prompt, composite, brandCtx) || "";
+            // 현재 이미지를 reference로 전달하여 수정
+            const currentImgUrl = imagePool[selImage]?.imageUrl;
+            let refImgs: { data: string; mimeType: string }[] | undefined;
+            if (currentImgUrl) {
+              const imgData = await imageUrlToBase64(currentImgUrl);
+              if (imgData) refImgs = [imgData];
+            }
+            const editPrompt = currentImgUrl
+              ? `현재 이미지를 기반으로 수정해줘: ${text}`
+              : prompt;
+            const res = await fetch("/api/generate-image", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                prompt: editPrompt,
+                imageType: composite.imageType || "",
+                copyContext: { nm1_label: composite.label, nm2_title: composite.titleLine1, nm3_desc: composite.titleLine2 },
+                ...(refImgs ? { referenceImages: refImgs } : {}),
+                ...(brandCtx ? { brandContext: brandCtx } : {}),
+              }),
+            });
+            if (res.ok) {
+              const data = await res.json();
+              foundImageUrl = data.image ? `data:${data.image.mimeType};base64,${data.image.data}` : "";
+            }
           }
           if (foundImageUrl && foundImageUrl !== directImageUrl) {
             addImageToPool(foundImageUrl, composite.textColor, composite.bgTreatment);
@@ -493,6 +517,17 @@ export default function Home() {
       if (!res.ok) return null;
       const data = await res.json();
       return data.results?.[0]?.imgUrl || null;
+    } catch { return null; }
+  }
+
+  async function imageUrlToBase64(url: string): Promise<{ data: string; mimeType: string } | null> {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      const buffer = await blob.arrayBuffer();
+      const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+      return { data: base64, mimeType: blob.type || "image/png" };
     } catch { return null; }
   }
 
