@@ -65,8 +65,8 @@ export default function Home() {
 
   const hasContent = copyPool.length > 0;
 
-  // CT 카드 영역 좌표 (scale 0.72 기준)
-  const SCALE = 0.72;
+  // CT 카드 영역 좌표 (scale 0.78 기준)
+  const SCALE = 0.78;
   const CT = { x: 19 * SCALE, y: 302 * SCALE, w: 335 * SCALE, h: 348 * SCALE };
   // 존 분할: 상단 텍스트 0~35%, 이미지 35~80%, 하단 텍스트 80~100%
   const ZONE_TOP = 0.35;
@@ -592,8 +592,8 @@ export default function Home() {
   ];
 
   return (
-    <div className="h-[100dvh] flex items-center justify-center bg-gray-100">
-      <div className="w-full h-full sm:w-[375px] sm:max-h-[812px] flex flex-col bg-gray-50 overflow-hidden sm:shadow-2xl sm:rounded-[2rem] sm:border sm:border-gray-200 relative">
+    <div className="h-[100dvh] flex items-center justify-center bg-gray-200">
+      <div className="w-full h-full sm:w-[375px] sm:max-h-[812px] flex flex-col bg-gray-100 overflow-hidden sm:shadow-2xl sm:rounded-[2rem] sm:border sm:border-gray-200 relative">
 
         {/* 메인: 디바이스 목업 */}
         <div className="flex-1 flex flex-col items-center justify-start pt-4 overflow-hidden">
@@ -603,6 +603,7 @@ export default function Home() {
               onFieldClick={hasContent ? (field: CTTextField, _rect: DOMRect) => handleFieldClick(field) : undefined}
               scale={SCALE}
               skeleton={hasContent}
+              cropRatio={0.86}
             />
 
             {/* 캐러셀 레이어 — 목업 위, CT 카드 영역에 클리핑 */}
@@ -748,9 +749,9 @@ export default function Home() {
 
         {/* 하단 플로팅 */}
         <div className="absolute bottom-0 left-0 right-0 z-10">
-          <div className="h-6 bg-gradient-to-t from-gray-50 to-transparent pointer-events-none" />
+          <div className="h-6 bg-gradient-to-t from-gray-100 to-transparent pointer-events-none" />
 
-          <div className="bg-gray-50 px-4 pb-5 sm:pb-5 pt-0 space-y-1.5" style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))" }}>
+          <div className="bg-gray-100 px-4 pb-5 sm:pb-5 pt-0 space-y-1.5" style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))" }}>
             {/* 변주 버튼 바 (콘텐츠 있을 때) */}
             {hasContent && (
               <div className="flex items-center justify-center gap-2">

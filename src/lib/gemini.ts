@@ -141,15 +141,35 @@ const SYSTEM_PROMPT = `너는 한국 금융사(현대카드) 앱의 CT(콘텐츠
 - 안 3: 숫자 임팩트형 (구체적 수치로 즉각 관심, "하루 300원이면")
 3가지 안은 서로 다른 후킹 전략을 써야 하며, 같은 패턴 반복 금지.
 
-## 이미지 유형 판단 (imageType 필드)
-요청 내용에 따라 적합한 이미지 유형을 판단해서 포함:
-- "INTERIOFOCUSED": 실내 공간 (레스토랑, 호텔, 라운지)
-- "PRODUCTFOCUSED": 상품 (음식, 패키지, 패션)
-- "OUTERIOR": 야외/여행
-- "LOGO": 브랜드 로고 단독
-- "CARDPRODUCT": 카드 제품샷
-- "VECTOR-UI": 3D일러스트/벡터
-- "HUMAN": 인물 포함
+## 이미지 유형 판단 (imageType 필드) — 매우 중요!
+서비스 성격, 브랜드 카테고리, 유저 요청을 종합해서 가장 적합한 이미지 유형을 선택해.
+PRODUCTFOCUSED에만 치우치지 말 것. 서비스 특성에 맞는 유형을 골라야 한다.
+
+### 유형별 사용 기준
+- "INTERIOFOCUSED": 레스토랑, 호텔, 라운지, 카페, 도서관, 골프클럽 등 **공간 경험**이 핵심인 서비스
+  → 다이닝 혜택, 호텔/리조트 혜택, 라운지 이용, 문화공간, 와인바, 쿠킹클래스
+- "PRODUCTFOCUSED": 구매 가능한 **물리적 상품**이 핵심인 서비스
+  → 음식 배달, 패션/뷰티 할인, 가전/전자기기 혜택, 식품 구독
+- "OUTERIOR": **야외 활동, 여행, 자연**이 핵심인 서비스
+  → 항공/여행 혜택, 리조트, 주유/충전, 아웃도어, 렌터카, 테마파크
+- "VECTOR-UI": **디지털 서비스, 금융상품, 추상적 개념**에 적합 (3D 클레이모피즘/아이소메트릭)
+  → 대출, 적금, 포인트 전환, 구독 서비스, 앱 기능 안내, 결제/핀테크, 게임 아이템
+- "HUMAN": **라이프스타일, 사람 중심 경험**이 핵심
+  → 패션/뷰티 브랜드, 쇼핑, 문화/엔터테인먼트, 피트니스
+- "LOGO": 브랜드 로고 단독 (기존 에셋 사용, AI 생성 불가)
+- "CARDPRODUCT": 카드 제품샷 (기존 에셋 사용, AI 생성 불가)
+
+### 판단 우선순위
+1. 유저가 직접 스타일을 지정한 경우 → 해당 유형 우선
+2. 브랜드 정보가 있는 경우 → 서비스 카테고리로 판단:
+   - F&B/요식업 → INTERIOFOCUSED (공간감) 또는 PRODUCTFOCUSED (음식 자체)
+   - 숙박/여행 → INTERIOFOCUSED (호텔) 또는 OUTERIOR (여행지)
+   - 유통/커머스 → PRODUCTFOCUSED
+   - 금융/핀테크/디지털 → VECTOR-UI
+   - 주유/모빌리티 → OUTERIOR
+   - 게임/IT → VECTOR-UI
+   - 패션/뷰티 → HUMAN 또는 PRODUCTFOCUSED
+3. 브랜드 정보 없을 때 → 키워드로 추론
 
 ## 출력 형식
 JSON 배열만 반환. 설명 없이 JSON만.
@@ -184,8 +204,9 @@ export function buildRequestBody(userMessage: string, currentVariants?: CTConten
   } else if (brandContext) {
     const colorParts = [`Primary: ${brandContext.primaryColor}`];
     if (brandContext.secondaryColor) colorParts.push(`Secondary: ${brandContext.secondaryColor}`);
-    prompt += `\n\n[브랜드 정보 (웹 검색)]: "${brandContext.brandName}" — ${brandContext.description} (${brandContext.category})`;
+    prompt += `\n\n[브랜드 정보 (웹 검색)]: "${brandContext.brandName}" — ${brandContext.description} (카테고리: ${brandContext.category})`;
     prompt += `\n키컬러: ${colorParts.join(", ")}. textColor와 bgTreatment를 이 키컬러와 조화롭게 설정해줘.`;
+    prompt += `\nimageType 판단 시 이 브랜드의 카테고리(${brandContext.category})와 서비스 특성(${brandContext.description})을 반드시 고려해서 적합한 이미지 유형을 선택해.`;
     if (brandContext.mascotName) {
       prompt += `\n마스코트: ${brandContext.mascotName}${brandContext.mascotDescription ? ` (${brandContext.mascotDescription})` : ""}`;
     }

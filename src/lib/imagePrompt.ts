@@ -99,21 +99,35 @@ function selectPresetKey(imageType: string, userRequest: string): string {
   if (imageType === "INTERIOFOCUSED") {
     if (q.includes("일본") || q.includes("가이세키") || q.includes("교토") || q.includes("오마카세") || q.includes("일식"))
       return "INTERIOFOCUSED_japanese_dining";
-    if (q.includes("호텔") || q.includes("스위트") || q.includes("리조트") || q.includes("라운지"))
+    if (q.includes("호텔") || q.includes("스위트") || q.includes("리조트") || q.includes("라운지") || q.includes("풀빌라"))
       return "INTERIOFOCUSED_hotel_suite";
+    if (q.includes("카페") || q.includes("커피") || q.includes("스타벅스") || q.includes("투썸") || q.includes("베이커리") || q.includes("파리바게뜨"))
+      return "INTERIOFOCUSED_fine_dining";
     return "INTERIOFOCUSED_fine_dining";
   }
 
   if (imageType === "PRODUCTFOCUSED") {
-    if (q.includes("음식") || q.includes("배달") || q.includes("피자") || q.includes("치킨") || q.includes("카페") || q.includes("커피") || q.includes("스타벅스") || q.includes("라떼"))
+    if (q.includes("음식") || q.includes("배달") || q.includes("피자") || q.includes("치킨") || q.includes("도미노") || q.includes("버거") || q.includes("푸드"))
+      return "PRODUCTFOCUSED_food";
+    if (q.includes("카페") || q.includes("커피") || q.includes("라떼") || q.includes("디저트") || q.includes("빵") || q.includes("케이크") || q.includes("아이스크림"))
       return "PRODUCTFOCUSED_food";
     return "PRODUCTFOCUSED_lifestyle";
   }
 
   if (imageType === "OUTERIOR") {
-    if (q.includes("도시") || q.includes("건물") || q.includes("도심") || q.includes("서울"))
+    if (q.includes("도시") || q.includes("건물") || q.includes("도심") || q.includes("서울") || q.includes("주유") || q.includes("gs칼텍스") || q.includes("쏘카"))
+      return "OUTERIOR_urban";
+    if (q.includes("골프") || q.includes("필드"))
       return "OUTERIOR_urban";
     return "OUTERIOR_tropical_resort";
+  }
+
+  if (imageType === "VECTOR-UI") {
+    return "VECTOR_UI_3d_isometric";
+  }
+
+  if (imageType === "HUMAN") {
+    return "HUMAN_lifestyle";
   }
 
   return TYPE_TO_PRESET[imageType] || "PRODUCTFOCUSED_food";
