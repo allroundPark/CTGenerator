@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { CTContent } from "@/types/ct";
 import { supabase } from "@/lib/supabase";
+import { getDeviceId } from "@/lib/deviceId";
 
 interface ReportModalProps {
   content: CTContent;
@@ -19,6 +20,7 @@ export default function ReportModal({ content, onClose }: ReportModalProps) {
     setSubmitting(true);
     try {
       const { error } = await supabase.from("ct_reports").insert({
+        device_id: getDeviceId(),
         card_state: {
           label: content.label,
           titleLine1: content.titleLine1,

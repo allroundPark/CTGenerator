@@ -5,6 +5,8 @@ import { CTContent, AttachedImage, BgTreatment, ImageConstraint, CTTextField, Br
 import ChatInput from "@/components/ChatInput";
 import DeviceViewer from "@/components/DeviceViewer";
 import { exportCtPng } from "@/lib/exportPng";
+import { supabase } from "@/lib/supabase";
+import { getDeviceId } from "@/lib/deviceId";
 
 // ── 필드 풀 타입 ──
 interface CopyOption {
@@ -205,6 +207,13 @@ export default function Home() {
     setSelImage(imagePool.length);
   };
 
+  // ── 로그 적재 (fire-and-forget) ──
+  const logToSupabase = (data: Record<string, unknown>) => {
+    supabase.from("ct_logs").insert({ device_id: getDeviceId(), ...data }).then(({ error }) => {
+      if (error) console.error("[log] insert error:", error);
+    });
+  };
+
   // ── 메인 생성 ──
   const handleSend = async (text: string, attachedImages?: AttachedImage[]) => {
     const applyImages = attachedImages?.filter((i) => i.option === "apply") || [];
@@ -225,6 +234,13 @@ export default function Home() {
           body: JSON.stringify({ message: text, currentContent: composite }),
         });
         const { intent } = await intentRes.json();
+
+        // 후속 요청 로그
+        logToSupabase({
+          message: text,
+          intent,
+          attached_images_count: attachedImages?.length || 0,
+        });
 
         if (intent === "image") {
           showStatus("이미지 수정 중...");
@@ -372,6 +388,19 @@ export default function Home() {
       appendToPool(newVariants, directImageUrl);
       showStatus("문구 3안 추가! 각 영역을 넘겨서 조합해보세요.");
 
+      // 첫 생성 로그
+      logToSupabase({
+        message: text,
+        intent: "new",
+        attached_images_count: attachedImages?.length || 0,
+        variants: newVariants.map((v) => ({
+          label: v.label, titleLine1: v.titleLine1, titleLine2: v.titleLine2,
+          subLine1: v.subLine1, subLine2: v.subLine2, textColor: v.textColor, imageType: v.imageType,
+        })),
+        image_type: newVariants[0]?.imageType || null,
+        brand_context: activeBrandCtx ? { brandName: activeBrandCtx.brandName, category: activeBrandCtx.category, primaryColor: activeBrandCtx.primaryColor } : null,
+      });
+
       // 이미지 처리
       if (!directImageUrl) {
         let foundImageUrl = "";
@@ -391,6 +420,7 @@ export default function Home() {
 
         if (foundImageUrl) {
           addImageToPool(foundImageUrl, newVariants[0].textColor, newVariants[0].bgTreatment);
+          logToSupabase({ message: text, intent: "image_generated", image_generated: true, image_type: newVariants[0]?.imageType || null });
         }
       }
 
