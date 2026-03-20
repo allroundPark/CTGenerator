@@ -113,12 +113,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "prompt is required" }, { status: 400 });
   }
 
-  // 외부 브랜드 컨텍스트를 imagePrompt에 전달
+  // 외부 브랜드 컨텍스트를 imagePrompt에 전달 (서비스 특성 포함)
   const externalBrand = brandContext ? {
     brandName: brandContext.brandName,
     primaryColor: brandContext.primaryColor,
     secondaryColor: brandContext.secondaryColor,
     mascotDescription: brandContext.mascotDescription,
+    description: brandContext.description,
+    targetAudience: brandContext.targetAudience,
+    serviceCharacteristics: brandContext.serviceCharacteristics,
   } : undefined;
 
   // Step 1: 프리셋 기반 구조화 프롬프트 빌드

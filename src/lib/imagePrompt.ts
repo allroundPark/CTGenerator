@@ -442,6 +442,9 @@ interface ExternalBrandContext {
   primaryColor: string;
   secondaryColor?: string | null;
   mascotDescription?: string | null;
+  description?: string | null;
+  targetAudience?: string | null;
+  serviceCharacteristics?: string | null;
 }
 
 export function buildImagePrompt(
@@ -456,11 +459,26 @@ export function buildImagePrompt(
 
   let prompt = flattenPreset(preset, userRequest, copyContext);
 
-  // 외부 브랜드 컨텍스트 (웹 검색으로 찾은 미등록 브랜드)
-  if (externalBrand && !detectBrandName(userRequest)) {
-    const colorParts = [`Primary: ${externalBrand.primaryColor}`];
-    if (externalBrand.secondaryColor) colorParts.push(`Secondary: ${externalBrand.secondaryColor}`);
-    prompt += `\n\nBrand "${externalBrand.brandName}" key colors: ${colorParts.join(", ")}. Use these as subtle accent colors only (e.g. a small prop, lighting tint, or background tone). Do NOT make the entire image this color. Keep the palette natural and balanced. Do NOT render any logos, brand marks, or symbols in the image.`;
+  // 외부 브랜드 컨텍스트 — 내장 브랜드여도 서비스 설명은 항상 활용
+  if (externalBrand) {
+    // 내장 브랜드가 아닌 경우에만 색상 힌트 추가 (내장 브랜드는 detectBrandColorHint에서 이미 처리)
+    if (!detectBrandName(userRequest)) {
+      const colorParts = [`Primary: ${externalBrand.primaryColor}`];
+      if (externalBrand.secondaryColor) colorParts.push(`Secondary: ${externalBrand.secondaryColor}`);
+      prompt += `\n\nBrand "${externalBrand.brandName}" key colors: ${colorParts.join(", ")}. Use these as subtle accent colors only (e.g. a small prop, lighting tint, or background tone). Do NOT make the entire image this color. Keep the palette natural and balanced. Do NOT render any logos, brand marks, or symbols in the image.`;
+    }
+
+    // 서비스 특성은 항상 전달 — 이미지 주제/분위기 결정에 핵심
+    if (externalBrand.description) {
+      prompt += `\n\nThis is for "${externalBrand.brandName}" — ${externalBrand.description}.`;
+      if (externalBrand.targetAudience) {
+        prompt += ` Target audience: ${externalBrand.targetAudience}.`;
+      }
+      if (externalBrand.serviceCharacteristics) {
+        prompt += ` Service characteristics: ${externalBrand.serviceCharacteristics}.`;
+      }
+      prompt += ` The image subject, mood, and setting should reflect this service's nature and appeal to its users.`;
+    }
 
     if (externalBrand.mascotDescription) {
       prompt += `\n\nThis brand has a mascot/character: ${externalBrand.mascotDescription}. If a reference image of the mascot is attached, use it as style/appearance reference to include the character naturally in the scene.`;

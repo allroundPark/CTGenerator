@@ -76,6 +76,8 @@ export interface BrandContext {
   brandName: string;
   description: string;
   category: string;
+  targetAudience: string | null;
+  serviceCharacteristics: string | null;
   primaryColor: string;
   secondaryColor: string | null;
   mascotName: string | null;

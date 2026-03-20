@@ -197,15 +197,26 @@ export function buildRequestBody(userMessage: string, currentVariants?: CTConten
     prompt += `[사용자 요청]: ${userMessage}`;
   }
 
-  // 브랜드 키컬러 힌트 추가 — 내장 브랜드 우선, 없으면 외부 검색 결과 사용
+  // 브랜드 키컬러 힌트 추가
   const brandHint = detectBrandColorHint(userMessage);
   if (brandHint) {
     prompt += `\n\n[브랜드 키컬러 참고]: ${brandHint}`;
-  } else if (brandContext) {
-    const colorParts = [`Primary: ${brandContext.primaryColor}`];
-    if (brandContext.secondaryColor) colorParts.push(`Secondary: ${brandContext.secondaryColor}`);
-    prompt += `\n\n[브랜드 정보 (웹 검색)]: "${brandContext.brandName}" — ${brandContext.description} (카테고리: ${brandContext.category})`;
-    prompt += `\n키컬러: ${colorParts.join(", ")}. textColor와 bgTreatment를 이 키컬러와 조화롭게 설정해줘.`;
+  }
+
+  // 브랜드 컨텍스트 (웹 검색 결과) — 내장 브랜드여도 서비스 설명/카테고리는 항상 전달
+  if (brandContext) {
+    if (!brandHint) {
+      const colorParts = [`Primary: ${brandContext.primaryColor}`];
+      if (brandContext.secondaryColor) colorParts.push(`Secondary: ${brandContext.secondaryColor}`);
+      prompt += `\n키컬러: ${colorParts.join(", ")}. textColor와 bgTreatment를 이 키컬러와 조화롭게 설정해줘.`;
+    }
+    prompt += `\n\n[브랜드/서비스 정보]: "${brandContext.brandName}" — ${brandContext.description} (카테고리: ${brandContext.category})`;
+    if (brandContext.targetAudience) {
+      prompt += `\n타겟 유저: ${brandContext.targetAudience}`;
+    }
+    if (brandContext.serviceCharacteristics) {
+      prompt += `\n서비스 특성: ${brandContext.serviceCharacteristics}`;
+    }
     prompt += `\nimageType 판단 시 이 브랜드의 카테고리(${brandContext.category})와 서비스 특성(${brandContext.description})을 반드시 고려해서 적합한 이미지 유형을 선택해.`;
     if (brandContext.mascotName) {
       prompt += `\n마스코트: ${brandContext.mascotName}${brandContext.mascotDescription ? ` (${brandContext.mascotDescription})` : ""}`;
