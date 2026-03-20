@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { CTContent, CTTextField, CT_BASE_WIDTH, CT_BASE_HEIGHT } from "@/types/ct";
 import CTCard from "./CTCard";
+import ReportModal from "./ReportModal";
 
 interface DeviceViewerProps {
   content: CTContent;
@@ -12,6 +13,8 @@ interface DeviceViewerProps {
   scale?: number;
   /** skeleton 모드: 이미지/텍스트 숨김 (외부 캐러셀에서 렌더) */
   skeleton?: boolean;
+  /** 하단 크롭 비율 (0~1, 기본 1=전체 표시). 잘린 부분은 그라데이션 페이드아웃 */
+  cropRatio?: number;
 }
 
 // 목업 이미지 기준 (1x = 375x812)
@@ -24,30 +27,38 @@ const MOCKUP = {
 
 type Theme = "dark" | "light";
 
-export default function DeviceViewer({ content, onFieldClick, onImageDrag, scale, skeleton }: DeviceViewerProps) {
+export default function DeviceViewer({ content, onFieldClick, onImageDrag, scale, skeleton, cropRatio }: DeviceViewerProps) {
   const [theme, setTheme] = useState<Theme>("light");
+  const [showReport, setShowReport] = useState(false);
 
   const displayScale = scale ?? 0.85;
   const displayWidth = MOCKUP.width * displayScale;
-  const displayHeight = MOCKUP.height * displayScale;
+  const fullHeight = MOCKUP.height * displayScale;
+  const crop = cropRatio ?? 1;
+  const displayHeight = fullHeight * crop;
 
   return (
     <div className="relative">
       {/* 목업 이미지 + CT 카드 오버레이 */}
       <div
-        className="relative rounded-[40px] overflow-hidden"
+        className="relative overflow-hidden"
         style={{
           width: displayWidth,
           height: displayHeight,
-          boxShadow: "0 25px 60px -12px rgba(0, 0, 0, 0.4), 0 10px 20px -8px rgba(0, 0, 0, 0.3)",
+          borderRadius: crop < 1 ? `${40 * displayScale}px ${40 * displayScale}px 0 0` : `${40 * displayScale}px`,
+          boxShadow: "0 8px 40px rgba(0, 0, 0, 0.12), 0 2px 12px rgba(0, 0, 0, 0.08)",
+          ...(crop < 1 ? {
+            WebkitMaskImage: "linear-gradient(to bottom, black 96%, transparent 100%)",
+            maskImage: "linear-gradient(to bottom, black 96%, transparent 100%)",
+          } : {}),
         }}
       >
         {/* 앱 목업 배경 이미지 */}
         <img
           src={`/assets/${theme}-375.png`}
           alt="App mockup"
-          className="absolute inset-0 w-full h-full"
-          style={{ objectFit: "cover" }}
+          className="absolute inset-0 w-full"
+          style={{ objectFit: "cover", height: fullHeight }}
         />
 
         {/* CT 카드 — 회색 영역 위에 정확히 오버레이 */}
@@ -86,6 +97,22 @@ export default function DeviceViewer({ content, onFieldClick, onImageDrag, scale
           </svg>
         )}
       </button>
+
+      {/* 리포트 버튼 — 다크모드 토글 아래 */}
+      <button
+        onClick={() => setShowReport(true)}
+        className="absolute -right-10 top-14 w-7 h-7 rounded-full flex items-center justify-center bg-white border border-gray-200 shadow-sm text-gray-500 hover:text-orange-500 transition-colors"
+        title="리포트"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>
+        </svg>
+      </button>
+
+      {/* 리포트 모달 */}
+      {showReport && (
+        <ReportModal content={content} onClose={() => setShowReport(false)} />
+      )}
     </div>
   );
 }
