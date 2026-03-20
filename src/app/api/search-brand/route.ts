@@ -9,10 +9,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
   }
 
-  const { query } = await req.json();
-  if (!query) {
+  const { query: rawQuery } = await req.json();
+  if (!rawQuery) {
     return NextResponse.json({ found: false });
   }
+  // prompt injection 방지: 특수문자 제거, 길이 제한
+  const query = String(rawQuery).replace(/["\\\n\r\t{}[\]]/g, " ").trim().slice(0, 200);
 
   try {
     // Gemini + Google Search Grounding으로 브랜드 조사

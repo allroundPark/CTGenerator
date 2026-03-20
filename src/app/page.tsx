@@ -5,6 +5,7 @@ import { CTContent, AttachedImage, BgTreatment, ImageConstraint, CTTextField, Br
 import ChatInput from "@/components/ChatInput";
 import DeviceViewer from "@/components/DeviceViewer";
 import { exportCtPng } from "@/lib/exportPng";
+import { isKnownBrand, getKnownBrandContext } from "@/lib/imagePrompt";
 import { supabase } from "@/lib/supabase";
 import { getDeviceId } from "@/lib/deviceId";
 
@@ -197,14 +198,17 @@ export default function Home() {
 
   // ── 이미지 풀에 추가 ──
   const addImageToPool = (imageUrl: string, textColor?: "BK" | "WT", bgTreatment?: BgTreatment) => {
-    setImagePool((prev) => [...prev, {
-      imageUrl,
-      textColor: textColor || composite.textColor,
-      bgTreatment: bgTreatment || composite.bgTreatment,
-      imageConstraint: { fit: "cover", alignX: "center", alignY: "center" },
-    }]);
-    // 새 이미지를 자동 선택
-    setSelImage(imagePool.length);
+    setImagePool((prev) => {
+      const next = [...prev, {
+        imageUrl,
+        textColor: textColor || composite.textColor,
+        bgTreatment: bgTreatment || composite.bgTreatment,
+        imageConstraint: { fit: "cover" as const, alignX: "center" as const, alignY: "center" as const },
+      }];
+      // 새 이미지를 자동 선택 (prev.length = 새 항목의 인덱스)
+      setSelImage(prev.length);
+      return next;
+    });
   };
 
   // ── 로그 적재 (fire-and-forget) ──
@@ -343,14 +347,18 @@ export default function Home() {
       showStatus("브랜드 검색 & 문구 생성 중...");
 
       // Step 1: 브랜드 검색 + 이미지 분석 (병렬)
+      // 등록 브랜드는 로컬 knowledge 사용, 미등록만 웹 검색
       const firstApplyFile = applyImages[0]?.file;
+      const knownBrand = getKnownBrandContext(text);
       const [brandSearchResult, imageAnalysis] = await Promise.all([
-        searchBrand(text),
+        knownBrand ? Promise.resolve(null) : searchBrand(text),
         firstApplyFile ? analyzeImage(firstApplyFile) : Promise.resolve(null),
       ]);
 
-      // 브랜드 검색 결과 저장
-      let activeBrandCtx = brandSearchResult;
+      // 브랜드 컨텍스트: 로컬 knowledge 우선, 없으면 웹 검색 결과
+      let activeBrandCtx: BrandContext | null = knownBrand
+        ? { ...knownBrand, mascotName: null, mascotDescription: null, mascotImage: null } as BrandContext
+        : brandSearchResult;
       if (activeBrandCtx) {
         setBrandCtx(activeBrandCtx);
         showStatus(`"${activeBrandCtx.brandName}" 정보 확인! 문구 생성 중...`);
@@ -537,27 +545,18 @@ export default function Home() {
     } catch { return null; }
   }
 
-  async function searchAsset(query: string): Promise<string | null> {
-    try {
-      const res = await fetch("/api/search-asset", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query }),
-      });
-      if (!res.ok) return null;
-      const data = await res.json();
-      return data.results?.[0]?.imgUrl || null;
-    } catch { return null; }
-  }
-
   async function imageUrlToBase64(url: string): Promise<{ data: string; mimeType: string } | null> {
     try {
       const res = await fetch(url);
       if (!res.ok) return null;
       const blob = await res.blob();
       const buffer = await blob.arrayBuffer();
-      const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
-      return { data: base64, mimeType: blob.type || "image/png" };
+      const bytes = new Uint8Array(buffer);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i += 8192) {
+        binary += String.fromCharCode(...bytes.slice(i, i + 8192));
+      }
+      return { data: btoa(binary), mimeType: blob.type || "image/png" };
     } catch { return null; }
   }
 
