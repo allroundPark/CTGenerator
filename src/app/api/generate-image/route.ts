@@ -72,7 +72,7 @@ async function findBrandLogo(brandName: string): Promise<{ data: string; mimeTyp
   return null;
 }
 
-const FLASH_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+const FLASH_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
 /** Gemini Flash로 로고 포함 의도 판별 */
 async function checkLogoIntent(apiKey: string, userPrompt: string): Promise<boolean> {

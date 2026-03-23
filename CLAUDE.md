@@ -14,7 +14,12 @@ npm run lint     # ESLint
 
 ## Environment
 
-`.env.local`에 `GEMINI_API_KEY` 필수. 모든 API route가 이 키를 사용. Vercel에도 동일 환경변수 설정 필요.
+`.env.local` 필수 환경변수:
+- `GEMINI_API_KEY` — 서버 API route에서 사용 (workinggroup 모드)
+- `NEXT_PUBLIC_SUPABASE_URL` — Supabase 프로젝트 URL
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` — Supabase publishable key
+
+Vercel에도 동일 환경변수 설정 필요.
 
 ## Project Structure
 
@@ -24,38 +29,51 @@ Contents Generator/          ← 작업 루트
 │   └── src/
 │       ├── app/             ← App Router (page.tsx + api/)
 │       ├── components/      ← React 컴포넌트
-│       ├── lib/             ← 유틸리티 (gemini, bytes, contrast, exportPng, imagePrompt, feedback)
-│       │   └── imagePrompt.ts에 브랜드 키컬러 데이터 + 프리셋 9종 인라인
-│       └── types/ct.ts      ← CTContent 등 핵심 타입 정의
+│       ├── lib/             ← 유틸리티
+│       │   ├── imagePrompt.ts ← BRAND_DB(26개 브랜드 knowledge) + 프리셋 9종 인라인
+│       │   ├── gemini.ts      ← 문구 생성 프롬프트 빌더 + 파서
+│       │   ├── apiKey.ts      ← AES-GCM 암호화 API 키 저장 (클라이언트)
+│       │   ├── getApiKey.ts   ← x-api-key 헤더 → env fallback (서버)
+│       │   ├── supabase.ts    ← Supabase 클라이언트
+│       │   └── deviceId.ts    ← localStorage 기반 기기별 ID
+│       └── types/ct.ts      ← CTContent, BrandContext 등 핵심 타입
 ├── data/                    ← 운영 데이터 (CSV, JSON, 이미지)
 └── Guidelines/              ← CT 041 디자인 가이드 PDF
 ```
 
-경로 alias: `@/` → `src/` (tsconfig paths). 모든 import에 `@/lib/`, `@/components/`, `@/types/` 사용.
+경로 alias: `@/` → `src/` (tsconfig paths).
 
 ## Architecture
 
-CT Generator는 금융사(현대카드) 앱 메인피드에 들어가는 **콘텐츠스레드(CT) 041 타입** 카드를 AI로 제작하는 웹 도구. 기존 피그마+외주 워크플로우를 대체하여 비디자이너(카드상품 기획자)가 직접 제작.
+CT Generator는 금융사(현대카드) 앱 메인피드에 들어가는 **콘텐츠스레드(CT) 041 타입** 카드를 AI로 제작하는 웹 도구. 비디자이너(카드상품 기획자)가 직접 제작.
+
+Tech: Next.js 16 (App Router), React 19, Tailwind CSS v4, TypeScript 5.
 
 ### Core Data Flow
 
 ```
 첫 요청:
-  → /api/generate (Gemini) → 문구 3안 생성 (NM1/NM2/NM3 + sub)
-  → /api/generate-image (Gemini) → AI 이미지 생성
-  → CTCard (프리뷰 렌더링) → DeviceViewer (앱 목업) → exportPng (WebP 추출)
+  → searchBrand (미등록 브랜드만 Gemini + Google Search Grounding)
+  → /api/generate (Gemini Flash) → 문구 3안 생성 (brandContext 포함)
+  → /api/generate-image (Gemini Flash Image) → 이미지 3장 병렬 생성 (variation별 구도 다양성)
+  → CTCard → DeviceViewer (앱 목업) → exportPng (WebP 추출)
 
-후속 요청 (이미 안이 있을 때):
-  → /api/classify-intent (Gemini Flash) → 의도 분류 (image/copy/sub/new/all)
+후속 요청:
+  → /api/classify-intent → 의도 분류 (image/copy/sub/new/all)
   → 해당 풀만 추가 (전체 재생성 아님)
+  → 이미지 수정 시: 현재 이미지를 referenceImages로 전달
 ```
 
-Tech: Next.js 16 (App Router), React 19, Tailwind CSS v4, TypeScript 5.
+### API 키 이중 모드
+
+클라이언트가 직접 Gemini API 키를 입력하거나, "workinggroup" 입력 시 서버 env 키 사용.
+- **클라이언트**: `apiKey.ts`에서 AES-GCM 암호화 → localStorage 저장 → 요청 시 `x-api-key` 헤더로 전달
+- **서버**: `getApiKey.ts`에서 헤더 우선, env fallback
+- **page.tsx**: `apiFetch()` 래퍼가 모든 API 호출에 키 헤더 자동 첨부
 
 ### 상태 관리 — 3개 독립 풀 (Mix & Match)
 
 `page.tsx`에서 3개 풀을 독립 관리. 유저가 영역별 스와이프로 자유 조합:
-
 - **copyPool** (CopyOption[]): label, titleLine1, titleLine2
 - **subPool** (SubOption[]): subLine1, subLine2 — 첫 번째는 항상 "없음"(빈 값)
 - **imagePool** (ImageOption[]): imageUrl, textColor, bgTreatment, imageConstraint
@@ -77,52 +95,52 @@ Tech: Next.js 16 (App Router), React 19, Tailwind CSS v4, TypeScript 5.
 
 | Route | 모델 | 역할 |
 |-------|------|------|
-| `/api/generate` | gemini-2.0-flash | 문구 3안 생성 (JSON mode) |
-| `/api/generate-image` | gemini-2.5-flash-image (폴백 3종) | 이미지 생성 (TEXT+IMAGE mode, imageConfig 1:1) |
-| `/api/analyze-image` | gemini-2.0-flash | 첨부 이미지 크롭 추천 (로고 판별) |
-| `/api/suggest` | gemini-2.0-flash | 텍스트 필드별 대안 5개 |
-| `/api/classify-intent` | gemini-2.0-flash | 후속 요청 의도 분류 (문구수정/이미지수정/신규생성 등) |
-| `/api/search-asset` | - | 기존 에셋 DB(contents_master.csv) 브랜드명 검색 + 웹 크롤링 |
+| `/api/generate` | gemini-2.5-flash | 문구 3안 생성 (JSON mode, brandContext 반영) |
+| `/api/generate-image` | gemini-2.5-flash-image (폴백 3종) | 이미지 생성 (variation별 구도 다양성, 마스코트/로고 참조) |
+| `/api/analyze-image` | gemini-2.5-flash | 첨부 이미지 크롭 추천 (로고 판별) |
+| `/api/suggest` | gemini-2.5-flash | 텍스트 필드별 대안 5개 (hint 파라미터로 유저 요청 반영) |
+| `/api/classify-intent` | gemini-2.5-flash | 후속 요청 의도 분류 (에러 시 안전 폴백: "image") |
+| `/api/search-brand` | gemini-2.5-flash + Google Search | 미등록 브랜드 웹 검색 (키컬러, 마스코트, 타겟층) |
+| `/api/search-asset` | - | 기존 에셋 DB(contents_master.csv) 브랜드명 검색 |
 
-### 이미지 첨부 플로우
+### 브랜드 Knowledge 시스템
 
-ChatInput에서 다중 이미지 첨부 가능. 이미지별 처리 옵션 3종:
-- **apply** (바로 적용): 원본 그대로 배경으로
-- **edit** (수정 후 적용): Gemini에 편집 요청
-- **reference** (참고용): 스타일만 참고하여 새 이미지 생성
+**등록 브랜드 (26개)**: `imagePrompt.ts`의 `BRAND_DB`에 인라인 정의.
+각 브랜드에 `primary`, `secondary`, `category`, `description`, `targetAudience`, `serviceCharacteristics` 포함.
+- `detectBrandName()` — 텍스트에서 브랜드명 탐색
+- `isKnownBrand()` — 등록 여부 확인
+- `getKnownBrandContext()` — BrandContext 형태로 반환
+- 등록 브랜드는 웹 검색 스킵, 로컬 knowledge 즉시 사용
 
-레퍼런스 이미지가 최우선순위. 이미지 미첨부 시: AI 이미지 생성 (에셋 검색 미사용)
+**미등록 브랜드**: `/api/search-brand`에서 Gemini + Google Search Grounding으로 웹 검색 → BrandContext 반환.
 
-### 순차 생성 UX
+**마스코트**: `generate-image/route.ts`의 `BRAND_MASCOT_MAP`에 등록된 브랜드는 항상 마스코트 이미지를 reference로 포함. 파일은 `public/logos/`에 저장.
 
-page.tsx의 handleSend가 단계별로 상태 메시지 표시:
-1. "문구 생성 중..." → 문구 완성 후 캔버스 즉시 업데이트
-2. "AI로 이미지 생성 중..." → Gemini 이미지 생성
-3. 완성 메시지
+**로고**: `BRAND_LOGO_MAP`으로 브랜드명 → 파일명 매핑. `checkLogoIntent()`로 유저가 로고 포함을 원하는지 판별 후 조건부 포함.
 
-### 디바이스 목업
+### 이미지 생성
 
-DeviceViewer가 앱 스크린샷(public/assets/dark-375.png, light-375.png) 위에 CTCard를 오버레이.
-목업 좌표 (1x): CT 영역 x:19 y:302 w:335 h:348.
+- **3장 병렬 생성**: variation 0(기본), 1(클로즈업), 2(와이드샷)로 구도 다양성. Promise.all로 동시 호출
+- **프리셋 9종**: imageType별 구조화 영문 프롬프트 (imagePrompt.ts)
+- **Hard Constraints**: 텍스트/로고/전자기기 금지, safe zone 규칙
+- **후속 수정 시**: 현재 이미지를 base64로 변환 → referenceImages로 전달 (세션 유지)
+
+### Supabase 연동
+
+- **ct_logs**: 유저 발화 + 생성 결과 통합 로그 (device_id, message, intent, variants, brand_context 등)
+- **ct_reports**: 유저 피드백 리포트 (device_id, card_state, user_memo, resolved)
+- `deviceId.ts`: localStorage 기반 기기별 자동 ID (`dev_xxx_xxx`)
+- 로깅은 fire-and-forget (UI 블로킹 없음)
+
+### 의도 분류 규칙 (classify-intent)
+
+후속 요청 시 Gemini가 의도를 분류. "new"/"all"은 명확한 주제 변경 시에만.
+- **에러 시 기본값**: `"image"` (풀 초기화 방지 — 이전에 `"all"`이어서 수정 중 데이터 유실 버그 있었음)
+- 짧은 수정 요청("키워줘", "밝게" 등)은 "image" 또는 "copy"로 분류
 
 ### 내보내기
 
-exportPng.ts: Canvas API로 **이미지+배경처리만** 3x(1005×1044) WebP 추출. 텍스트/하트/로고는 앱에서 렌더하므로 PNG에 포함하지 않음. 파일명: `YYMMDD_CT041_BK|WT@3x.webp`.
-
-### 브랜드 키컬러 시스템
-
-`imagePrompt.ts`와 `gemini.ts`에 24개 브랜드 키컬러 데이터가 인라인 정의. 양방향 매칭 (컬리 → 마켓컬리). 이미지 생성 시 subtle accent로만 적용 (전체 도배 금지). `detectBrandName()`은 export되어 다른 모듈에서도 사용 가능.
-
-**로고**: `public/logos/`에 영문 소문자 파일명 (starbucks.png, kurly.png 등). `generate-image/route.ts`의 `BRAND_LOGO_MAP`으로 브랜드명 → 파일명 매핑. Gemini Flash가 유저 요청에 로고 포함 의도가 있는지 판별(`checkLogoIntent`) → 있을 때만 reference image로 전달.
-
-### 이미지 프롬프트 Hard Constraints
-
-imagePrompt.ts의 `flattenPreset()`이 항상 적용하는 제약:
-- 텍스트/타이포그래피 절대 금지
-- 로고/브랜드 마크/워터마크/심볼 금지 (명시적 요청 시만 포함)
-- 전자기기(노트북, 폰 등) 금지
-- Safe zone: 좌상단 40%×65%, 좌하단 18%×55%, 우하단 15%×20%
-- 피사체는 중앙~우하단에 집중, 텍스트 영역과 여유 10~15% 마진
+exportPng.ts: Canvas API로 **이미지+배경처리만** 3x(1005×1044) WebP 추출. 텍스트/하트/로고는 앱에서 렌더하므로 포함하지 않음. 파일명: `YYMMDD_CT041_BK|WT@3x.webp`.
 
 ## 콘텐츠 생성 규칙
 
@@ -136,28 +154,27 @@ imagePrompt.ts의 `flattenPreset()`이 항상 적용하는 제약:
 
 ### 종결 어미 규칙 (필수 준수)
 
-- **명사형 종결** (~60%): `10% 할인 쿠폰`, `VIP 멤버십 제공`, `누리는 완벽한 쉼`
-- **해요체** (~25%): `혜택이 있어요!`, `확인해 보세요`, `여행을 떠나요`
-- **~기 종결** (~10%): `미리 예약하고 10% 할인받기`, `찾기`
-- **금지**: 반말(~해,~야,~지), 합쇼체(~합니다), 물음형(~할까요?)
+- **명사형 종결** (~60%): `10% 할인 쿠폰`, `VIP 멤버십 제공`
+- **해요체** (~25%): `혜택이 있어요!`, `확인해 보세요`
+- **~기 종결** (~10%): `미리 예약하고 10% 할인받기`
+- **금지**: 반말(~해,~야,~지), 합쇼체(~합니다)
+- **허용 물음형** (NM2 후킹용만): `아직도 정가에?` 같은 짧은 수사적 질문
 
 ### 이미지 유형 (imageType 필드)
-
-CTContent에 `imageType` 필드로 분류. Gemini 생성 가능 여부가 다름:
 
 | 유형 | Gemini | 용도 |
 |------|:------:|------|
 | INTERIOFOCUSED | O | 실내 공간 (레스토랑, 호텔, 라운지) |
 | PRODUCTFOCUSED | O | 상품 (음식, 패키지) |
 | OUTERIOR | O | 야외/여행 |
-| VECTOR-UI | △ | 3D일러스트 (Claymorphism) |
+| VECTOR-UI | O | 3D일러스트 (Claymorphism) — 금융/디지털 서비스 |
 | HUMAN | O | 인물 (얼굴 비노출) |
 | CARDPRODUCT | X | 카드 제품샷 (기존 에셋) |
 | LOGO | X | 브랜드 로고 (기존 에셋) |
 
-## 운영 데이터 (../data/)
+imageType 판단은 브랜드 카테고리와 서비스 특성을 기반으로. PRODUCTFOCUSED 치우침 방지.
 
-프로젝트 루트의 `data/` 폴더에 운영 데이터 위치:
+## 운영 데이터 (../data/)
 
 | 파일 | 내용 |
 |------|------|
@@ -165,23 +182,12 @@ CTContent에 `imageType` 필드로 분류. Gemini 생성 가능 여부가 다름
 | `image_classification_final.csv` | 이미지 7종 분류 |
 | `ux_writing_pattern_guide.md` | UX Writing 패턴 가이드 (종결어미 규칙 포함) |
 | `gemini_prompt_spec.json` | 이미지 프리셋 9종 + decision_tree |
-| `gemini_meta_prompt.json` | Gemini 메타 프롬프트 (system_instruction + request_template) |
 | `images/{TYPE}/` | 다운로드된 에셋 112건 (7개 하위 폴더) |
 
-search-asset API가 contents_master.csv를 인메모리 캐시로 로드하여 브랜드명 검색에 사용. 일반 단어(브랜드/혜택/카드 등)는 매칭에서 제외하고 실제 브랜드명만 매칭.
+## 주의사항
 
-## TODO
-
-### 이미지 생성 개선
-- [ ] 턴테이킹: 채팅으로 "더 따뜻하게", "어둡게" 등 스타일 조정
-- [ ] 생성된 이미지 로컬 저장 + 목록에서 불러오기
-
-### 이미지 배치/조작
-- [ ] 로고/작은 이미지 자동 중앙 배치
-- [ ] 큰 이미지 드래그/이동 크롭 위치 조정
-
-### 내보내기
-- [x] CMS용 WebP @3x (구현 완료)
-- [ ] 모션용 Lottie JSON 내보내기
-- [ ] 파일명 자동생성 규칙 확장
-- [ ] Figma 연동 (REST API 또는 Plugin)
+- `addImageToPool`은 함수형 업데이트 사용. 병렬 호출 시 비결정적 선택 방지를 위해 첫 이미지(`newIndex === 0`)일 때만 `setSelImage` 호출
+- `imageUrlToBase64`는 chunk 단위(8192) 변환 필수 (큰 이미지 스택 오버플로우)
+- search-brand의 유저 입력은 반드시 sanitize (prompt injection 방지)
+- Supabase 키는 `NEXT_PUBLIC_*` 환경변수 사용, 하드코딩 금지
+- suggest API는 `currentContent` 키로 전달 (`content` 아님), `hint`도 별도 파라미터로 전달

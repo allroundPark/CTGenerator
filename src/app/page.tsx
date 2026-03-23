@@ -234,14 +234,15 @@ export default function Home() {
   // ── 이미지 풀에 추가 ──
   const addImageToPool = (imageUrl: string, textColor?: "BK" | "WT", bgTreatment?: BgTreatment) => {
     setImagePool((prev) => {
+      const newIndex = prev.length;
       const next = [...prev, {
         imageUrl,
         textColor: textColor || composite.textColor,
         bgTreatment: bgTreatment || composite.bgTreatment,
         imageConstraint: { fit: "cover" as const, alignX: "center" as const, alignY: "center" as const },
       }];
-      // 새 이미지를 자동 선택 (prev.length = 새 항목의 인덱스)
-      setSelImage(prev.length);
+      // 첫 번째 이미지일 때만 자동 선택 (병렬 호출 시 마지막 도착이 선택되는 문제 방지)
+      if (newIndex === 0) setSelImage(0);
       return next;
     });
   };
@@ -444,10 +445,9 @@ export default function Home() {
         brand_context: activeBrandCtx ? { brandName: activeBrandCtx.brandName, category: activeBrandCtx.category, primaryColor: activeBrandCtx.primaryColor } : null,
       });
 
-      // 이미지 처리 — 3장 순차 생성, variation으로 구도 다양성 + 각 variant copyContext
+      // 이미지 처리 — 3장 병렬 생성, variation으로 구도 다양성 + 각 variant copyContext
       if (!directImageUrl) {
         const IMAGE_COUNT = 3;
-        let generatedCount = 0;
 
         // 유저 첨부 이미지를 base64로 변환 (ref/edit용)
         let attachedRefData: { data: string; mimeType: string }[] | undefined;
@@ -459,21 +459,24 @@ export default function Home() {
           attachedRefData = [{ data: b64, mimeType: editImages[0].file.type }];
         }
 
-        for (let i = 0; i < IMAGE_COUNT; i++) {
+        showStatus("이미지 3장 동시 생성 중...");
+
+        let generatedCount = 0;
+        const promises = Array.from({ length: IMAGE_COUNT }, (_, i) => {
           const variant = newVariants[i] || newVariants[0];
-          showStatus(`이미지 생성 중... (${i + 1}/${IMAGE_COUNT})`);
+          return generateImageFromPrompt(text, variant, activeBrandCtx, i, attachedRefData)
+            .then((imgUrl) => {
+              if (imgUrl) {
+                addImageToPool(imgUrl, variant.textColor, variant.bgTreatment);
+                generatedCount++;
+                if (i === 0) {
+                  logToSupabase({ message: text, intent: "image_generated", image_generated: true, image_type: variant.imageType || null });
+                }
+              }
+            });
+        });
 
-          // 모든 장에 첨부 이미지를 ref로 전달 + variation으로 구도 변경
-          const imgUrl = await generateImageFromPrompt(text, variant, activeBrandCtx, i, attachedRefData) || "";
-
-          if (imgUrl) {
-            addImageToPool(imgUrl, variant.textColor, variant.bgTreatment);
-            generatedCount++;
-            if (i === 0) {
-              logToSupabase({ message: text, intent: "image_generated", image_generated: true, image_type: variant.imageType || null });
-            }
-          }
-        }
+        await Promise.all(promises);
 
         showStatus(generatedCount > 0
           ? `이미지 ${generatedCount}장 생성 완료! 각 영역을 넘기면서 조합해보세요.`

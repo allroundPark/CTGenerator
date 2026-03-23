@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getApiKey } from "@/lib/getApiKey";
 
 const GEMINI_API_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
 const PROMPT = `이 이미지를 335×348 카드 배경으로 사용할 거야.
 피사체(주요 오브젝트)의 위치를 분석해서 최적의 크롭 정렬을 추천해줘.

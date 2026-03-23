@@ -269,9 +269,15 @@ export function parseGeminiResponse(raw: string): CTContent[] {
   });
 }
 
+/** 대괄호 플레이스홀더 제거: [스타벅스] → 스타벅스 */
+function stripBrackets(str: string): string {
+  return str.replace(/\[([^\]]+)\]/g, "$1");
+}
+
 function ensureBytes(str: string): string {
-  if (getByteLength(str) <= 34) return str;
-  return truncateToBytes(str, 34);
+  const cleaned = stripBrackets(str);
+  if (getByteLength(cleaned) <= 34) return cleaned;
+  return truncateToBytes(cleaned, 34);
 }
 
 const FIELD_LABELS: Record<string, string> = {
@@ -369,7 +375,10 @@ export function parseSuggestResponse(raw: string): string[] {
 
   return parsed
     .filter((s): s is string => typeof s === "string")
-    .map((s) => (getByteLength(s) > 34 ? truncateToBytes(s, 34) : s));
+    .map((s) => {
+      const cleaned = stripBrackets(s);
+      return getByteLength(cleaned) > 34 ? truncateToBytes(cleaned, 34) : cleaned;
+    });
 }
 
 // 그룹 필드 대안 파싱 (각 항목이 [line1, line2])
@@ -385,10 +394,14 @@ export function parseGroupSuggestResponse(raw: string): [string, string][] {
     .filter((item): item is [string, string] =>
       Array.isArray(item) && item.length >= 2 && typeof item[0] === "string" && typeof item[1] === "string"
     )
-    .map(([l1, l2]) => [
-      getByteLength(l1) > 34 ? truncateToBytes(l1, 34) : l1,
-      getByteLength(l2) > 34 ? truncateToBytes(l2, 34) : l2,
-    ]);
+    .map(([l1, l2]) => {
+      const c1 = stripBrackets(l1);
+      const c2 = stripBrackets(l2);
+      return [
+        getByteLength(c1) > 34 ? truncateToBytes(c1, 34) : c1,
+        getByteLength(c2) > 34 ? truncateToBytes(c2, 34) : c2,
+      ] as [string, string];
+    });
 }
 
 // 금지 조합 교정
