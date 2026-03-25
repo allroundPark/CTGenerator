@@ -108,26 +108,53 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { prompt, referenceImages, copyContext, imageType, brandContext, variation } = body;
+  const { prompt, referenceImages, copyContext, imageType, brandContext, variation, enhance } = body;
 
   if (!prompt) {
     return NextResponse.json({ error: "prompt is required" }, { status: 400 });
   }
 
-  // 외부 브랜드 컨텍스트를 imagePrompt에 전달 (서비스 특성 포함)
-  const externalBrand = brandContext ? {
-    brandName: brandContext.brandName,
-    primaryColor: brandContext.primaryColor,
-    secondaryColor: brandContext.secondaryColor,
-    mascotDescription: brandContext.mascotDescription,
-    description: brandContext.description,
-    targetAudience: brandContext.targetAudience,
-    serviceCharacteristics: brandContext.serviceCharacteristics,
-  } : undefined;
+  let fullPrompt: string;
+  let useSubjectPipeline = false; // 2단계 파이프라인 (주제부 생성 → 상단 확장)
 
-  // Step 1: 프리셋 기반 구조화 프롬프트 빌드 (variation으로 구도 다양성)
-  const fullPrompt = buildImagePrompt(prompt, imageType, copyContext, externalBrand, variation);
-  console.log(`[image-gen] imageType=${imageType || "default"}, variation=${variation ?? 0}, prompt length=${fullPrompt.length}`);
+  if (enhance) {
+    // 첨부 이미지 보정 모드 — 프리셋 없이 보정 전용 프롬프트
+    fullPrompt = `You are enhancing a user-provided image for use as a 1:1 square card background. The output will be exported at 3x resolution (1005×1044px WebP), so maximum sharpness and detail is critical.
+
+TASK:
+- Enhance the attached image to high quality and extend it to fit a 1:1 square aspect ratio
+- Position the main subject (focal object) so its center sits at approximately the lower 1/3 of the image (around 66% from top). The upper 2/3 is where text overlays will go
+- Extend/outpaint ONLY with simple, natural continuation of the existing background (sky, blur, gradient, etc.)
+- Maximize sharpness: crisp edges, fine texture detail, no softness or blur on the subject. The image must hold up at 3x pixel density without looking mushy
+- Clean, natural lighting and true-to-life colors
+
+DO NOT:
+- Do NOT add any new objects, elements, or details that are not already in the original image
+- Do NOT add text, logos, watermarks, or UI elements
+- Do NOT change or reinterpret the subject — if something is ambiguous, leave it as-is
+- Do NOT fill empty space with concrete new objects — use only simple background continuation (solid color, sky, bokeh, blur)
+- Do NOT change the original mood, color palette, or atmosphere
+- Do NOT apply any artificial sharpening artifacts or HDR-like over-processing
+
+User context: ${prompt}`;
+    console.log(`[image-gen] enhance mode, prompt length=${fullPrompt.length}`);
+  } else {
+    // 외부 브랜드 컨텍스트를 imagePrompt에 전달 (서비스 특성 포함)
+    const externalBrand = brandContext ? {
+      brandName: brandContext.brandName,
+      primaryColor: brandContext.primaryColor,
+      secondaryColor: brandContext.secondaryColor,
+      mascotDescription: brandContext.mascotDescription,
+      description: brandContext.description,
+      targetAudience: brandContext.targetAudience,
+      serviceCharacteristics: brandContext.serviceCharacteristics,
+    } : undefined;
+
+    // 2단계 파이프라인: subjectOnly 모드로 주제부 생성 → 이후 상단 확장
+    useSubjectPipeline = true;
+    fullPrompt = buildImagePrompt(prompt, imageType, copyContext, externalBrand, variation, true);
+    console.log(`[image-gen] subject pipeline Step1, imageType=${imageType || "default"}, variation=${variation ?? 0}, prompt length=${fullPrompt.length}`);
+  }
 
   const parts: Array<Record<string, unknown>> = [{ text: fullPrompt }];
 
@@ -163,23 +190,40 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 브랜드 로고 참조 — Gemini가 로고 필요 여부 판단 (마스코트 브랜드 제외)
+  // 브랜드 로고/CI 참조 (마스코트 브랜드 제외)
   if (brandName && !BRAND_MASCOT_MAP[brandName]) {
-    const needsLogo = await checkLogoIntent(apiKey, prompt);
-    if (needsLogo) {
+    // 항상 CI 레퍼런스가 필요한 브랜드 (최신 CI 강제)
+    const ALWAYS_ATTACH_CI = new Set(["대한항공"]);
+
+    if (ALWAYS_ATTACH_CI.has(brandName)) {
       const logo = await findBrandLogo(brandName);
       if (logo) {
-        parts[0] = { text: (parts[0] as { text: string }).text + `\n\nThe attached image is the brand logo for "${brandName}". Incorporate this logo subtly in the bottom-right area of the generated image.` };
+        parts[0] = { text: (parts[0] as { text: string }).text + `\n\nThe attached image is the CURRENT (2025) official brand CI for "${brandName}". Use this as the AUTHORITATIVE visual reference for this brand's identity, colors, and design language. Any brand elements in the generated image MUST match this new CI — do NOT use any older versions of this brand's logo or visual identity.` };
         parts.push({ inline_data: { mime_type: logo.mimeType, data: logo.data } });
-        console.log(`[image-gen] 브랜드 로고 참조: ${brandName}`);
+        console.log(`[image-gen] 브랜드 CI 항상 참조: ${brandName}`);
+      }
+    } else {
+      const needsLogo = await checkLogoIntent(apiKey, prompt);
+      if (needsLogo) {
+        const logo = await findBrandLogo(brandName);
+        if (logo) {
+          parts[0] = { text: (parts[0] as { text: string }).text + `\n\nThe attached image is the brand logo for "${brandName}". Incorporate this logo subtly in the bottom-right area of the generated image.` };
+          parts.push({ inline_data: { mime_type: logo.mimeType, data: logo.data } });
+          console.log(`[image-gen] 브랜드 로고 참조: ${brandName}`);
+        }
       }
     }
   }
 
-  // 모델 순회하며 시도
+  // Step 1: 이미지 생성 (주제부 파이프라인이면 3:2, 아니면 1:1)
+  const step1AspectRatio = useSubjectPipeline ? "3:2" : "1:1";
+
+  let step1Image: { data: string; mimeType: string } | null = null;
+  let step1Text = "";
+
   for (const model of IMAGE_MODELS) {
     const url = `${GEMINI_BASE}/${model}:generateContent?key=${apiKey}`;
-    console.log(`[image-gen] 시도: ${model}`);
+    console.log(`[image-gen] Step1 시도: ${model} (${step1AspectRatio})`);
 
     try {
       const geminiRes = await fetch(url, {
@@ -190,7 +234,7 @@ export async function POST(req: NextRequest) {
           generationConfig: {
             responseModalities: ["TEXT", "IMAGE"],
             imageConfig: {
-              aspectRatio: "1:1",
+              aspectRatio: step1AspectRatio,
               imageSize: "1K",
             },
           },
@@ -226,22 +270,117 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      console.log(`[image-gen] ${model}: 성공!`);
-      return NextResponse.json({
-        image: {
-          data: imageData.data,
-          mimeType: imageData.mimeType || imageData.mime_type,
-        },
-        text: textPart?.text || "",
-      });
+      console.log(`[image-gen] ${model}: Step1 성공!`);
+      step1Image = {
+        data: imageData.data,
+        mimeType: (imageData.mimeType || imageData.mime_type) as string,
+      };
+      step1Text = textPart?.text || "";
+      break;
     } catch (e) {
       console.error(`[image-gen] ${model} 예외:`, e);
       continue;
     }
   }
 
-  return NextResponse.json(
-    { error: "모든 이미지 생성 모델이 실패했습니다. 이미지를 직접 첨부해주세요." },
-    { status: 502 }
-  );
+  if (!step1Image) {
+    return NextResponse.json(
+      { error: "모든 이미지 생성 모델이 실패했습니다. 이미지를 직접 첨부해주세요." },
+      { status: 502 }
+    );
+  }
+
+  // 주제부 파이프라인이 아니면 (enhance 등) Step 1 결과를 바로 반환
+  if (!useSubjectPipeline) {
+    return NextResponse.json({
+      image: step1Image,
+      text: step1Text,
+    });
+  }
+
+  // Step 2: 상단 확장 — 3:2 주제부 이미지를 1:1로 아웃페인팅
+  const expandPrompt = `You are extending a subject-focused image UPWARD to create a complete card background.
+
+The attached image contains the main subject/focal area of a card. Extend this image to a 1:1 square format by adding content ABOVE.
+
+RULES:
+- The UPPER portion (newly added area, ~top 35%) must be LOW-CONTRAST and SIMPLE — this is where text will overlay
+- Use natural continuation of the existing background: soft gradients, blurred colors, bokeh, atmospheric haze, or subtle texture
+- The transition from existing image to extended area must be SEAMLESS — no visible seam or boundary
+- Do NOT modify, crop, or recompose the existing lower portion of the image
+- Do NOT add new objects, text, logos, or distinct elements in the extended area
+- Maintain the same color palette, lighting direction, and mood
+- Maximum sharpness and detail — the output will be displayed at 3x resolution`;
+
+  for (const model of IMAGE_MODELS) {
+    const url = `${GEMINI_BASE}/${model}:generateContent?key=${apiKey}`;
+    console.log(`[image-gen] Step2 상단확장 시도: ${model}`);
+
+    try {
+      const geminiRes = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: expandPrompt },
+              { inline_data: { mime_type: step1Image.mimeType, data: step1Image.data } },
+            ],
+          }],
+          generationConfig: {
+            responseModalities: ["TEXT", "IMAGE"],
+            imageConfig: {
+              aspectRatio: "1:1",
+              imageSize: "1K",
+            },
+          },
+        }),
+      });
+
+      if (!geminiRes.ok) {
+        const errText = await geminiRes.text();
+        console.error(`[image-gen] Step2 ${model} HTTP 실패:`, geminiRes.status, errText.slice(0, 300));
+        continue;
+      }
+
+      const data = await geminiRes.json();
+      const candidate = data.candidates?.[0]?.content?.parts;
+      if (!candidate) {
+        console.error(`[image-gen] Step2 ${model}: empty candidate`);
+        continue;
+      }
+
+      const imagePart = candidate.find(
+        (p: Record<string, unknown>) => p.inlineData || p.inline_data
+      );
+
+      const imageData = (imagePart?.inlineData || imagePart?.inline_data) as
+        | { data: string; mimeType?: string; mime_type?: string }
+        | undefined;
+
+      if (!imageData) {
+        console.error(`[image-gen] Step2 ${model}: no image in response`);
+        continue;
+      }
+
+      console.log(`[image-gen] Step2 ${model}: 성공! 2단계 파이프라인 완료`);
+      return NextResponse.json({
+        image: {
+          data: imageData.data,
+          mimeType: imageData.mimeType || imageData.mime_type,
+        },
+        text: step1Text,
+      });
+    } catch (e) {
+      console.error(`[image-gen] Step2 ${model} 예외:`, e);
+      continue;
+    }
+  }
+
+  // Step 2 실패 시 Step 1 결과라도 반환 (3:2이지만 없는 것보다 나음)
+  console.warn(`[image-gen] Step2 모두 실패, Step1 결과 fallback 반환`);
+  return NextResponse.json({
+    image: step1Image,
+    text: step1Text,
+  });
 }

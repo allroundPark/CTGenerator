@@ -22,7 +22,7 @@ const BRAND_DB: Record<string, BrandKnowledge> = {
   "무신사": { primary: "#000000", secondary: "#FFFFFF", category: "패션/커머스", description: "국내 최대 온라인 패션 플랫폼", targetAudience: "10~30대 남녀, 스트릿/캐주얼 패션 관심층", serviceCharacteristics: "스트릿/캐주얼 패션 큐레이션, 무신사 스탠다드 자체브랜드" },
   "SSG.COM": { primary: "#FF0050", secondary: null, category: "커머스/유통", description: "신세계그룹 통합 온라인몰", targetAudience: "30~50대, 프리미엄 쇼핑 선호", serviceCharacteristics: "백화점/이마트/트레이더스 통합, 새벽배송, 프리미엄 식품" },
   "G마켓": { primary: "#00C73C", secondary: "#0B2B8E", category: "커머스/오픈마켓", description: "국내 대형 오픈마켓", targetAudience: "가격 비교 민감 20~40대", serviceCharacteristics: "오픈마켓 가격경쟁, 스마일배송, 대규모 할인 이벤트" },
-  "대한항공": { primary: "#003DA5", secondary: null, category: "항공/여행", description: "대한민국 국적 항공사", targetAudience: "해외여행객, 비즈니스 출장 30~50대", serviceCharacteristics: "풀서비스 항공, 마일리지 프로그램, 글로벌 노선 네트워크" },
+  "대한항공": { primary: "#003DA5", secondary: null, category: "항공/여행", description: "대한민국 국적 항공사 (2025년 리브랜딩: 상모 리본에서 착안한 현대적 태극마크, 메탈릭 하늘색 동체, 슬로건 'Anywhere is Possible')", targetAudience: "해외여행객, 비즈니스 출장 30~50대", serviceCharacteristics: "풀서비스 항공, 마일리지 프로그램, 글로벌 노선 네트워크. 2025 신규 CI: 네이비 단색 태극마크(빨강 없음), 미니멀 모던 디자인, 메탈릭 스카이블루 항공기 도장" },
   "쏘카": { primary: "#00B8FF", secondary: null, category: "모빌리티", description: "카셰어링 플랫폼", targetAudience: "무차량 20~30대 도시 거주자", serviceCharacteristics: "앱 기반 카셰어링, 시간/일 단위 렌탈, 다양한 차종" },
   "도미노": { primary: "#E31837", secondary: "#006491", category: "F&B/배달", description: "글로벌 피자 배달 체인", targetAudience: "10~30대, 가족 단위 주문", serviceCharacteristics: "배달 피자 전문, 앱 주문, 프로모션/쿠폰 중심 마케팅" },
   "파리바게뜨": { primary: "#0062B8", secondary: null, category: "F&B/베이커리", description: "국내 최대 프랜차이즈 베이커리", targetAudience: "전 연령대, 가벼운 식사/간식 소비", serviceCharacteristics: "프랜차이즈 베이커리 카페, 빵/케이크/샌드위치, 시즌 한정 메뉴" },
@@ -92,7 +92,14 @@ function detectBrandColorHint(text: string): string | null {
       const parts: string[] = [`Primary: ${colors.primary}`];
       if (colors.secondary) parts.push(`Secondary: ${colors.secondary}`);
       if (colors.tertiary) parts.push(`Tertiary: ${colors.tertiary}`);
-      return `Brand "${brand}" key colors: ${parts.join(", ")}. Use these as subtle accent colors only (e.g. a small prop, lighting tint, or background tone). Do NOT make the entire image this color. Keep the palette natural and balanced. Do NOT render any logos, brand marks, or symbols in the image.`;
+      let hint = `Brand "${brand}" key colors: ${parts.join(", ")}. Use these as subtle accent colors only (e.g. a small prop, lighting tint, or background tone). Do NOT make the entire image this color. Keep the palette natural and balanced. Do NOT render any logos, brand marks, or symbols in the image.`;
+
+      // 대한항공 신규 CI 강제 — 구 CI(빨강+파랑 태극) 사용 방지
+      if (brand === "대한항공") {
+        hint += ` IMPORTANT: Korean Air rebranded in 2025. The NEW CI uses a SINGLE navy-blue (#003DA5) modern taeguk mark inspired by sangmo ribbon — NO red color in the logo. The aircraft livery is metallic sky-blue. Do NOT use the OLD Korean Air CI (red and blue taeguk, bright sky-blue body with red/blue stripes). Use only the 2025 modern, minimalist, navy-mono design language.`;
+      }
+
+      return hint;
     }
   }
   return null;
@@ -424,7 +431,7 @@ const PRESETS: Record<string, PromptParameters> = {
 };
 
 // 프리셋 파라미터 → 자연어 영문 프롬프트
-function flattenPreset(p: PromptParameters, userRequest: string, copyContext?: CopyContext): string {
+function flattenPreset(p: PromptParameters, userRequest: string, copyContext?: CopyContext, subjectOnly?: boolean): string {
   const lines: string[] = [];
 
   // 유저 요청 + 문구 맥락에서 주제 파악 → 피사체 결정의 최우선 기준
@@ -454,13 +461,24 @@ function flattenPreset(p: PromptParameters, userRequest: string, copyContext?: C
 
   const se = p.composition.surrounding_elements;
   lines.push(`- The image should be FULL and RICH across the entire frame — no large empty/blank areas.`);
-  lines.push(`- Top-left area (upper 35% × left 60%): white text will overlay here, so keep this area LOW-CONTRAST and SIMPLE (e.g. dark/blurred/soft background, bokeh, shadow, out-of-focus elements) — but NOT empty. The background should still have content, just subdued enough for text readability.`);
-  lines.push(`- Bottom-left strip (lower 15% × left 50%): small text overlay area — keep relatively simple but not blank.`);
-  lines.push(`- The main subject can span the full frame but should be most prominent in the CENTER to BOTTOM-RIGHT area.`);
+  if (subjectOnly) {
+    // Step 1: 주제부 전용 — 텍스트 세이프존 없이 피사체 집중
+    lines.push(`- This is a SUBJECT-FOCUSED crop. Fill the ENTIRE frame with the main subject and its immediate context.`);
+    lines.push(`- The main subject should be prominently centered, occupying 50-70% of the frame.`);
+    lines.push(`- No need to reserve space for text — every area should have rich visual content.`);
+  } else {
+    lines.push(`- Top-left area (upper 35% × left 60%): white text will overlay here, so keep this area LOW-CONTRAST and SIMPLE (e.g. dark/blurred/soft background, bokeh, shadow, out-of-focus elements) — but NOT empty. The background should still have content, just subdued enough for text readability.`);
+    lines.push(`- Bottom-left strip (lower 15% × left 50%): small text overlay area — keep relatively simple but not blank.`);
+    lines.push(`- The main subject can span the full frame but should be most prominent in the CENTER to BOTTOM-RIGHT area.`);
+  }
 
   lines.push(``);
   lines.push(`Hard constraints: ${p.constraints.join(". ")}. Absolutely NO text, letters, words, numbers, or typography anywhere in the image. NO logos, brand marks, symbols, watermarks, or emblems. NO electronic devices, screens, laptops, tablets, or phones.`);
-  lines.push(`Format: Square 1:1, commercial-grade quality, 335×348px card background.`);
+  if (subjectOnly) {
+    lines.push(`Format: Landscape 3:2, commercial-grade quality. This is the subject area of a card — will be extended upward later.`);
+  } else {
+    lines.push(`Format: Square 1:1, commercial-grade quality, 335×348px card background.`);
+  }
 
   // 브랜드 키컬러 힌트 추가
   const brandHint = detectBrandColorHint(userRequest);
@@ -497,13 +515,14 @@ export function buildImagePrompt(
   imageType?: string,
   copyContext?: CopyContext,
   externalBrand?: ExternalBrandContext,
-  variation?: number
+  variation?: number,
+  subjectOnly?: boolean
 ): string {
   const type = imageType || "PRODUCTFOCUSED";
   const presetKey = selectPresetKey(type, userRequest);
   const preset = PRESETS[presetKey] || PRESETS.PRODUCTFOCUSED_food;
 
-  let prompt = flattenPreset(preset, userRequest, copyContext);
+  let prompt = flattenPreset(preset, userRequest, copyContext, subjectOnly);
 
   // variation별 구도/앵글 다양성
   const variationIdx = variation ?? 0;

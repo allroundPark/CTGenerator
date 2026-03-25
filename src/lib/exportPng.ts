@@ -143,3 +143,51 @@ export async function exportCtPng(content: CTContent): Promise<void> {
     URL.revokeObjectURL(url);
   }, "image/webp", 0.9);
 }
+
+/** 메일 첨부용: base64 + 파일명 반환 */
+export async function exportCtBase64(content: CTContent): Promise<{ base64: string; fileName: string }> {
+  const SCALE = 3;
+  const W = CT_BASE_WIDTH * SCALE;
+  const H = CT_BASE_HEIGHT * SCALE;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d")!;
+
+  ctx.fillStyle = "#E0E0E0";
+  ctx.fillRect(0, 0, W, H);
+
+  if (content.imageUrl) {
+    try {
+      const img = await loadImage(content.imageUrl);
+      drawImageCover(ctx, img, W, H, content.imageConstraint.alignX, content.imageConstraint.alignY, content.imageConstraint.customX, content.imageConstraint.customY);
+    } catch { /* 회색 유지 */ }
+  }
+
+  if (content.bgTreatment.type === "solid") {
+    ctx.fillStyle = content.bgTreatment.color;
+    ctx.fillRect(0, 0, W, content.bgTreatment.height * SCALE);
+  }
+
+  if (content.bgTreatment.type === "gradient") {
+    const gradH = H * (2 / 3);
+    const grad = ctx.createLinearGradient(0, 0, 0, gradH);
+    const isDark = content.bgTreatment.direction === "dark";
+    for (const stop of content.bgTreatment.stops) {
+      const rgb = isDark ? "0,0,0" : "255,255,255";
+      grad.addColorStop(stop.position / 100, `rgba(${rgb},${stop.opacity})`);
+    }
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, gradH);
+  }
+
+  const now = new Date();
+  const dateStr = `${String(now.getFullYear()).slice(2)}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+  const fileName = `${dateStr}_CT041_${content.textColor}@3x.webp`;
+
+  const dataUrl = canvas.toDataURL("image/webp", 0.9);
+  const base64 = dataUrl.split(",")[1];
+
+  return { base64, fileName };
+}

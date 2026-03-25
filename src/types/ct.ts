@@ -85,12 +85,35 @@ export interface BrandContext {
   mascotImage: { data: string; mimeType: string } | null;
 }
 
+// Orchestration 스펙 (유저 발화에서 추출된 정보)
+export interface ContentSpec {
+  brand: string | null;
+  content: string | null;
+  imageSource: "ai" | "upload" | "combine" | null;
+  imageStyle: string | null;
+  textTone: string | null;
+  textDraft: string | null;
+  generatedPrompt: string | null;
+  generatedImageType: string | null;
+  generatedTextColor: string | null;
+}
+
+export const EMPTY_SPEC: ContentSpec = {
+  brand: null, content: null, imageSource: null,
+  imageStyle: null, textTone: null, textDraft: null,
+  generatedPrompt: null, generatedImageType: null, generatedTextColor: null,
+};
+
 // 채팅 메시지
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "system";
   content: string;
+  type?: "text" | "options" | "status";
+  options?: { label: string; value: string }[];
   variants?: CTContent[];
-  imageUrls?: string[]; // 첨부된 이미지 프리뷰 (채팅 표시용)
+  imageUrls?: string[];
+  attachedImages?: AttachedImage[];
+  showReport?: boolean;
   timestamp: number;
 }

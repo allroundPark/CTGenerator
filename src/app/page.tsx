@@ -1,15 +1,22 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { CTContent, AttachedImage, BgTreatment, ImageConstraint, CTTextField, BrandContext } from "@/types/ct";
+import { CTContent, AttachedImage, BgTreatment, ImageConstraint, CTTextField, BrandContext, ChatMessage, GenerationStatus, ContentSpec, EMPTY_SPEC } from "@/types/ct";
 import ChatInput from "@/components/ChatInput";
+import ChatPanel from "@/components/ChatPanel";
 import DeviceViewer from "@/components/DeviceViewer";
+import ReportModal from "@/components/ReportModal";
 import ApiKeySetup from "@/components/ApiKeySetup";
-import { exportCtPng } from "@/lib/exportPng";
-import { isKnownBrand, getKnownBrandContext } from "@/lib/imagePrompt";
+import { exportCtPng, exportCtBase64 } from "@/lib/exportPng";
+import { isKnownBrand, getKnownBrandContext, detectBrandName } from "@/lib/imagePrompt";
 import { supabase } from "@/lib/supabase";
 import { getDeviceId } from "@/lib/deviceId";
 import { loadKey, hasStoredKey, isWorkingGroup, clearKey } from "@/lib/apiKey";
+
+const PRESETS = [
+  "Amex 도쿄 다이닝 혜택",
+  "자동차담보대출 안내",
+];
 
 // ── 필드 풀 타입 ──
 interface CopyOption {
@@ -95,17 +102,168 @@ export default function Home() {
   // 브랜드 컨텍스트 (웹 검색 결과)
   const [brandCtx, setBrandCtx] = useState<BrandContext | null>(null);
 
+  // 채팅 입력창 placeholder
+  const [chatPlaceholder, setChatPlaceholder] = useState("만들고 싶은 콘텐츠를 알려주세요");
+
+  // 첨부 버튼 강조 상태
+  const [highlightAttach, setHighlightAttach] = useState(false);
+
+  // 리포트 팝업
+  const [showReport, setShowReport] = useState(false);
+
+  // 입력창 포커스 — 현상 유지 (포커스만으로 바텀시트 변경 안 함)
+  const handleInputFocusChange = useCallback((_focused: boolean) => {
+    // no-op: 바텀시트 높이는 대화 흐름(raiseSheet)에서만 변경
+  }, []);
+
+  // ── ContentSpec 상태 (유저 발화에서 추출된 정보) ──
+  const [contentSpec, setContentSpec] = useState<ContentSpec>({ ...EMPTY_SPEC });
+
+  // 바텀시트 높이 (드래그) — 초기 10%, 대화 시작되면 25%
+  const [sheetHeight, setSheetHeight] = useState(100);
+  const [sheetSnapping, setSheetSnapping] = useState(false);
+  const sheetHeightRef = useRef(sheetHeight);
+  sheetHeightRef.current = sheetHeight;
+  const dragRef = useRef<{ startY: number; startH: number } | null>(null);
+
+  // 스냅: 입력창+상태(100px), 대화UI(280px), 50%
+  const getSnaps = () => {
+    const vh = window.innerHeight;
+    return [100, 280, Math.round(vh * 0.6)];
+  };
+
+  const onDragStart = useCallback((clientY: number) => {
+    setSheetSnapping(false);
+    dragRef.current = { startY: clientY, startH: sheetHeightRef.current };
+  }, []);
+
+  const onDragMove = useCallback((clientY: number) => {
+    if (!dragRef.current) return;
+    const dy = dragRef.current.startY - clientY;
+    const [min, , max] = getSnaps();
+    const h = Math.max(min, Math.min(max, dragRef.current.startH + dy));
+    sheetHeightRef.current = h;
+    setSheetHeight(h);
+  }, []);
+
+  const onDragEnd = useCallback(() => {
+    if (!dragRef.current) return;
+    const cur = sheetHeightRef.current;
+    const snaps = getSnaps();
+    // 가장 가까운 스냅 포인트로
+    let closest = snaps[0];
+    let minDist = Math.abs(cur - snaps[0]);
+    for (const s of snaps) {
+      const d = Math.abs(cur - s);
+      if (d < minDist) { closest = s; minDist = d; }
+    }
+    setSheetSnapping(true);
+    setSheetHeight(closest);
+    sheetHeightRef.current = closest;
+    dragRef.current = null;
+  }, []);
+
+  // 채팅 메시지 히스토리
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+
+
+
+  const addMessage = useCallback((msg: Omit<ChatMessage, "id" | "timestamp">) => {
+    const newMsg: ChatMessage = { ...msg, id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, timestamp: Date.now() };
+    setMessages((prev) => [...prev, newMsg]);
+    return newMsg.id;
+  }, []);
+
+  const updateMessage = useCallback((id: string, update: Partial<ChatMessage>) => {
+    setMessages((prev) => prev.map((m) => m.id === id ? { ...m, ...update } : m));
+  }, []);
+
+  // 바텀시트 올리기 헬퍼
+  const raiseSheet = useCallback(() => {
+    try {
+      const midSnap = getSnaps()[1];
+      if (sheetHeightRef.current < midSnap) {
+        setSheetSnapping(true);
+        setSheetHeight(midSnap);
+        sheetHeightRef.current = midSnap;
+      }
+    } catch { /* SSR 무시 */ }
+  }, []);
+
+  // 메시지가 있거나 로딩 중이면 최소 280px(대화UI) 스냅으로 올리기
+  useEffect(() => {
+    if ((messages.length > 0 || isLoading) && sheetHeightRef.current <= 100) {
+      setSheetSnapping(true);
+      setSheetHeight(280);
+      sheetHeightRef.current = 280;
+    }
+  }, [messages.length, isLoading]);
+
   // 첫 생성 안내
   const [showHint, setShowHint] = useState(true);
+
+
+  // 메일 보내기
+  const [showEmailInput, setShowEmailInput] = useState(false);
+  const [emailAddr, setEmailAddr] = useState("");
+  const [emailSending, setEmailSending] = useState(false);
+
+  const handleSendEmail = async () => {
+    if (!emailAddr.trim() || !hasContent) return;
+    setEmailSending(true);
+    try {
+      const { base64, fileName } = await exportCtBase64(composite);
+      const res = await apiFetch("/api/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to: emailAddr.trim(), imageBase64: base64, fileName }),
+      });
+      if (res.ok) {
+        setShowEmailInput(false);
+        setEmailAddr("");
+        showStatus("메일 발송 완료!");
+      } else {
+        const data = await res.json().catch(() => ({ error: "발송 실패" }));
+        showStatus(`메일 발송 실패: ${data.error}`);
+      }
+    } catch {
+      showStatus("메일 발송 중 오류가 발생했습니다.");
+    } finally {
+      setEmailSending(false);
+    }
+  };
 
   // 스와이프 상태
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
 
+  // 디바이스 프리뷰 — 컨테이너 너비/높이에 맞게 동적 스케일
+  const deviceContainerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const [containerHeight, setContainerHeight] = useState(0);
+  useEffect(() => {
+    const el = deviceContainerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const { width: w, height: h } = entries[0]?.contentRect ?? { width: 0, height: 0 };
+      if (w > 0) setContainerWidth(w);
+      if (h > 0) setContainerHeight(h);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [apiKeyReady]);
+  // CT 콘텐츠 하단(1x) + 10px 여유를 두고 스케일 제한
+  // CT 하단 = (188 + 348) = 536px + 10px 마진 = 546px (1x 기준)
+  const CT_BOTTOM_1X = 546;
+  const scaleByWidth = containerWidth > 0 ? containerWidth / 375 : 1;
+  // 바텀시트가 -mt-[15px]로 15px 겹치므로 실제 가용 높이에서 차감
+  const availableHeight = Math.max(0, containerHeight - 15);
+  const scaleByHeight = availableHeight > 0 ? availableHeight / CT_BOTTOM_1X : 1;
+  const SCALE = Math.min(scaleByWidth, scaleByHeight);
+
   const hasContent = copyPool.length > 0;
 
-  // CT 카드 영역 좌표 (scale 0.78 기준)
-  const SCALE = 0.78;
-  const CT = { x: 19 * SCALE, y: 302 * SCALE, w: 335 * SCALE, h: 348 * SCALE };
+  // CT 카드 영역 좌표 (동적 스케일 기반)
+  const CT = { x: 19 * SCALE, y: 188 * SCALE, w: 335 * SCALE, h: 348 * SCALE };
   // 존 분할: 상단 텍스트 0~35%, 이미지 35~80%, 하단 텍스트 80~100%
   const ZONE_TOP = 0.35;
   const ZONE_MID = 0.80;
@@ -260,7 +418,12 @@ export default function Home() {
     const editImages = attachedImages?.filter((i) => i.option === "edit") || [];
     const refImages = attachedImages?.filter((i) => i.option === "reference") || [];
 
-    const directImageUrl = applyImages.length > 0 ? applyImages[0].previewUrl : "";
+    // "바로적용" 이미지 → base64로 변환 (reference로 Gemini 보정에 사용)
+    let applyImageData: { data: string; mimeType: string } | null = null;
+    if (applyImages.length > 0) {
+      const b64 = await fileToBase64(applyImages[0].file);
+      applyImageData = { data: b64, mimeType: applyImages[0].file.type || "image/jpeg" };
+    }
 
     setIsLoading(true);
 
@@ -290,9 +453,11 @@ export default function Home() {
             foundImageUrl = await generateImage(text, refImages[0], composite, "reference") || "";
           } else if (editImages.length > 0) {
             foundImageUrl = await generateImage(text, editImages[0], composite, "edit") || "";
-          } else if (directImageUrl) {
-            addImageToPool(directImageUrl);
-            foundImageUrl = directImageUrl;
+          } else if (applyImageData) {
+            showStatus("첨부 이미지 보정 중...");
+            foundImageUrl = await generateImageFromPrompt(
+              text || prompt, composite, brandCtx, undefined, [applyImageData], true
+            ) || "";
           } else {
             // 현재 이미지를 reference로 전달하여 수정
             const currentImgUrl = imagePool[selImage]?.imageUrl;
@@ -320,10 +485,11 @@ export default function Home() {
               foundImageUrl = data.image ? `data:${data.image.mimeType};base64,${data.image.data}` : "";
             }
           }
-          if (foundImageUrl && foundImageUrl !== directImageUrl) {
+          if (foundImageUrl) {
             addImageToPool(foundImageUrl, composite.textColor, composite.bgTreatment);
           }
           showStatus("이미지 추가 완료!");
+          addMessage({ role: "assistant", content: foundImageUrl ? "이미지를 수정했어요! 스와이프해서 비교해보세요." : "이미지 수정에 실패했어요." });
           return;
         }
 
@@ -345,6 +511,7 @@ export default function Home() {
             }
           }
           showStatus("상단 문구 추가 완료!");
+          addMessage({ role: "assistant", content: "상단 문구를 추가했어요! 스와이프해서 확인해보세요." });
           return;
         }
 
@@ -366,6 +533,7 @@ export default function Home() {
             }
           }
           showStatus("하단 문구 추가 완료!");
+          addMessage({ role: "assistant", content: "하단 문구를 추가했어요! 스와이프해서 확인해보세요." });
           return;
         }
 
@@ -380,16 +548,35 @@ export default function Home() {
       }
 
       // 첫 생성 또는 새 주제 전체 생성
-      showStatus("브랜드 검색 & 문구 생성 중...");
+      showStatus(applyImageData ? "이미지 보정 & 문구 생성 중..." : "브랜드 검색 & 문구 생성 중...");
 
-      // Step 1: 브랜드 검색 + 이미지 분석 (병렬)
-      // 등록 브랜드는 로컬 knowledge 사용, 미등록만 웹 검색
-      const firstApplyFile = applyImages[0]?.file;
+      // 바로적용 이미지가 있으면 이미지 보정을 즉시 병렬로 시작
+      const isEnhance = !!applyImageData;
+      let imagePromise: Promise<void> | null = null;
+      let generatedCount = 0;
+
+      if (applyImageData) {
+        // 이미지 보정을 문구 생성과 병렬로 즉시 시작 (문구 결과 기다리지 않음)
+        const IMAGE_COUNT = 3;
+        const attachedRefData = [applyImageData];
+        imagePromise = (async () => {
+          showStatus("첨부 이미지 보정 중...");
+          const promises = Array.from({ length: IMAGE_COUNT }, (_, i) =>
+            generateImageFromPrompt(text, { imageType: "" } as CTContent, null, i, attachedRefData, true)
+              .then((imgUrl) => {
+                if (imgUrl) {
+                  addImageToPool(imgUrl);
+                  generatedCount++;
+                }
+              })
+          );
+          await Promise.all(promises);
+        })();
+      }
+
+      // Step 1: 브랜드 검색 (이미지 보정과 병렬)
       const knownBrand = getKnownBrandContext(text);
-      const [brandSearchResult, imageAnalysis] = await Promise.all([
-        knownBrand ? Promise.resolve(null) : searchBrand(text),
-        firstApplyFile ? analyzeImage(firstApplyFile) : Promise.resolve(null),
-      ]);
+      const brandSearchResult = knownBrand ? null : await searchBrand(text);
 
       // 브랜드 컨텍스트: 로컬 knowledge 우선, 없으면 웹 검색 결과
       let activeBrandCtx: BrandContext | null = knownBrand
@@ -420,17 +607,9 @@ export default function Home() {
       const data = await genRes.json();
       const newVariants: CTContent[] = data.variants.map((v: CTContent) => ({
         ...v,
-        imageUrl: directImageUrl || v.imageUrl,
-        ...(imageAnalysis && !imageAnalysis.isSmall
-          ? { imageConstraint: { fit: "cover" as const, alignX: imageAnalysis.alignX, alignY: imageAnalysis.alignY } }
-          : {}),
-        ...(imageAnalysis && imageAnalysis.isSmall
-          ? { imageConstraint: { fit: "contain" as const, alignX: "center" as const, alignY: "center" as const } }
-          : {}),
       }));
 
-      appendToPool(newVariants, directImageUrl);
-      showStatus("문구 3안 추가! 각 영역을 넘겨서 조합해보세요.");
+      appendToPool(newVariants);
 
       // 첫 생성 로그
       logToSupabase({
@@ -445,11 +624,17 @@ export default function Home() {
         brand_context: activeBrandCtx ? { brandName: activeBrandCtx.brandName, category: activeBrandCtx.category, primaryColor: activeBrandCtx.primaryColor } : null,
       });
 
-      // 이미지 처리 — 3장 병렬 생성, variation으로 구도 다양성 + 각 variant copyContext
-      if (!directImageUrl) {
+      // 이미지 처리
+      if (imagePromise) {
+        // 바로적용: 이미 병렬로 시작한 이미지 보정 완료 대기
+        await imagePromise;
+        showStatus(generatedCount > 0
+          ? `이미지 ${generatedCount}장 보정 완료! 각 영역을 넘기면서 조합해보세요.`
+          : "문구는 완성! 이미지 보정에 실패했어요. 다시 시도해보세요.");
+      } else {
+        // 일반: 문구 결과 기반으로 이미지 3장 생성
         const IMAGE_COUNT = 3;
 
-        // 유저 첨부 이미지를 base64로 변환 (ref/edit용)
         let attachedRefData: { data: string; mimeType: string }[] | undefined;
         if (refImages.length > 0) {
           const b64 = await fileToBase64(refImages[0].file);
@@ -461,7 +646,6 @@ export default function Home() {
 
         showStatus("이미지 3장 동시 생성 중...");
 
-        let generatedCount = 0;
         const promises = Array.from({ length: IMAGE_COUNT }, (_, i) => {
           const variant = newVariants[i] || newVariants[0];
           return generateImageFromPrompt(text, variant, activeBrandCtx, i, attachedRefData)
@@ -481,11 +665,18 @@ export default function Home() {
         showStatus(generatedCount > 0
           ? `이미지 ${generatedCount}장 생성 완료! 각 영역을 넘기면서 조합해보세요.`
           : "문구는 완성! 이미지를 첨부하거나 생성 요청해보세요.");
-      } else {
-        showStatus("완성! 각 영역을 넘기면서 조합해보세요.");
       }
+      // 생성 완료 메시지
+      addMessage({
+        role: "assistant",
+        content: generatedCount > 0
+          ? "완성! 이상한 거 있으면 추가 요청해주세요."
+          : "문구를 만들었어요! 이미지를 첨부하거나 요청해보세요.",
+        showReport: generatedCount > 0,
+      });
     } catch (e) {
       showStatus(`오류: ${e instanceof Error ? e.message : "알 수 없는 오류"}`);
+      addMessage({ role: "assistant", content: `오류가 발생했어요: ${e instanceof Error ? e.message : "알 수 없는 오류"}` });
     } finally {
       setIsLoading(false);
     }
@@ -622,7 +813,7 @@ export default function Home() {
     } catch { return null; }
   }
 
-  async function generateImageFromPrompt(prompt: string, variant: CTContent, brandContext?: BrandContext | null, variation?: number, referenceImages?: { data: string; mimeType: string }[]): Promise<string | null> {
+  async function generateImageFromPrompt(prompt: string, variant: CTContent, brandContext?: BrandContext | null, variation?: number, referenceImages?: { data: string; mimeType: string }[], enhance?: boolean): Promise<string | null> {
     try {
       const res = await apiFetch("/api/generate-image", {
         method: "POST",
@@ -634,6 +825,7 @@ export default function Home() {
           ...(brandContext ? { brandContext } : {}),
           ...(variation !== undefined ? { variation } : {}),
           ...(referenceImages?.length ? { referenceImages } : {}),
+          ...(enhance ? { enhance: true } : {}),
         }),
       });
       if (!res.ok) return null;
@@ -642,38 +834,265 @@ export default function Home() {
     } catch { return null; }
   }
 
-  const handleMessage = async (text: string, images?: AttachedImage[]) => {
-    const imageKeywords = ["이미지 생성", "이미지 만들", "배경 생성", "배경 만들", "그림 그려", "이미지도 생성"];
-    const isImageOnly = imageKeywords.some((kw) => text.includes(kw)) && (!images || images.length === 0);
-
-    if (isImageOnly) {
-      setIsLoading(true);
-      showStatus("이미지 생성 중...");
-      try {
-        const imgUrl = await generateImageFromPrompt(text, composite, brandCtx);
-        if (imgUrl) addImageToPool(imgUrl);
-        showStatus(imgUrl ? "이미지 추가 완료!" : "이미지 생성에 실패했어요.");
-      } finally {
-        setIsLoading(false);
+  const handleMessage = async (rawText: string, images?: AttachedImage[]) => {
+    // 숫자만 입력했으면 마지막 options 메시지에서 해당 옵션으로 변환
+    let text = rawText.trim();
+    const numMatch = text.match(/^(\d)$/);
+    if (numMatch) {
+      const lastOptions = [...messages].reverse().find((m) => m.type === "options" && m.options?.length);
+      if (lastOptions?.options) {
+        const idx = parseInt(numMatch[1]) - 1;
+        if (idx >= 0 && idx < lastOptions.options.length) {
+          text = lastOptions.options[idx].value;
+        }
       }
-    } else {
+    }
+
+    // 유저 메시지를 채팅에 추가
+    addMessage({
+      role: "user",
+      content: text,
+      imageUrls: images?.map((img) => img.previewUrl),
+      attachedImages: images,
+    });
+
+    // ── 이미지/텍스트 첨부 대기 중인데 이미지 없이 텍스트만 온 경우 → 그냥 만들어주기 ──
+    if (highlightAttach && !images?.length) {
+      setHighlightAttach(false);
+      setChatPlaceholder("만들고 싶은 콘텐츠를 알려주세요");
+      const prompt = [contentSpec.brand, contentSpec.content].filter(Boolean).join(" ");
+      addMessage({ role: "assistant", content: "알겠어요, AI가 알아서 만들어볼게요!" });
+      await handleSend(prompt || text);
+      return;
+    }
+
+    // ── 이미 카드 있으면 수정 모드 ──
+    const hasImages = !!(images && images.length > 0);
+    if (hasContent) {
+      await handleSend(text, images);
+      return;
+    }
+
+    // ── 이미지 첨부됨 + 처리 방식 미명시 → 이미지 처리 옵션 질문 ──
+    const imageProcessKeywords = ["보정", "조합", "합성", "합쳐", "섞어", "바로 적용", "그대로"];
+    const hasImageIntent = imageProcessKeywords.some((kw) => text.includes(kw));
+    if (hasImages && !hasImageIntent) {
+      setHighlightAttach(false);
+      addMessage({
+        role: "assistant",
+        content: "이미지를 어떻게 활용할까요?",
+        type: "options",
+        options: [
+          { label: "그대로 사용", value: "이 이미지를 그대로 카드 배경으로 사용해줘" },
+          { label: "AI 보정", value: "이 이미지를 AI로 보정해서 카드 만들어줘" },
+          { label: "스타일 변형", value: "이 이미지 스타일을 참고해서 새로 만들어줘" },
+        ],
+      });
+      return;
+    }
+
+    // ── 이미지 첨부 + 의도 명확 → 바로 생성 ──
+    if (hasImages) {
+      await handleSend(text, images);
+      return;
+    }
+
+    // ── Extract-Spec: LLM이 필드 추출 → 클라이언트가 판단 ──
+    try {
+      const statusId = addMessage({ role: "assistant", content: "생각하는 중...", type: "status" });
+
+      // "AI가 바로 만들기" 또는 위임형 발화 → 현재 spec으로 생성
+      const isDelegation = text === "AI가 바로 만들기" ||
+        (contentSpec.brand && /그냥|걍|알아서|다해|니가|너가|넘어가|바로.*만들|만들어줘|ㄱㄱ|고고/.test(text));
+      if (isDelegation) {
+        setHighlightAttach(false);
+        const prompt = [contentSpec.brand, contentSpec.content].filter(Boolean).join(" ");
+        updateMessage(statusId, { content: "만들어볼게요!", type: "text" });
+        await handleSend(prompt || text, images);
+        return;
+      }
+
+      // "텍스트 초안 있어요" → 텍스트 입력 유도
+      if (text === "텍스트 초안 있어요") {
+        updateMessage(statusId, {
+          content: "텍스트 초안을 입력해주세요!",
+          type: "text",
+        });
+        setChatPlaceholder("텍스트 초안을 입력해주세요");
+        raiseSheet();
+        return;
+      }
+
+      // "이미지 있어요" → 첨부 유도 + imageSource 기록
+      if (text === "이미지 있어요") {
+        setHighlightAttach(true);
+        setContentSpec(prev => ({ ...prev, imageSource: "upload" }));
+        updateMessage(statusId, {
+          content: "이미지를 첨부해주세요!",
+          type: "text",
+        });
+        setChatPlaceholder("이미지를 첨부해주세요");
+        raiseSheet();
+        return;
+      }
+
+      // "둘 다 있어요" → 텍스트 + 이미지 첨부 유도 + imageSource 기록
+      if (text === "둘 다 있어요") {
+        setHighlightAttach(true);
+        setContentSpec(prev => ({ ...prev, imageSource: "upload" }));
+        updateMessage(statusId, {
+          content: "텍스트 초안을 입력하고, 이미지도 첨부해주세요!",
+          type: "text",
+        });
+        setChatPlaceholder("텍스트 초안을 입력하세요 (이미지도 첨부)");
+        raiseSheet();
+        return;
+      }
+
+      // "AI가 알아서 해주세요" → brand 있으면 바로 생성, 없으면 brand 질문
+      if (text === "AI가 알아서 해주세요") {
+        if (contentSpec.brand) {
+          const prompt = contentSpec.brand + (contentSpec.content ? " " + contentSpec.content : "");
+          updateMessage(statusId, { content: "AI가 알아서 만들어볼게요!", type: "text" });
+          await handleSend(prompt, images);
+        } else {
+          updateMessage(statusId, {
+            content: "어떤 브랜드/주제의 콘텐츠를 만들까요?",
+            type: "options",
+            options: [
+              { label: "AI가 알아서 해주세요", value: "AI가 알아서 해주세요" },
+              { label: "대한항공카드", value: "대한항공카드" },
+              { label: "마켓컬리", value: "마켓컬리" },
+              { label: "자동차대출", value: "자동차대출" },
+            ],
+          });
+          raiseSheet();
+        }
+        return;
+      }
+
+      // extract-spec 호출 → 필드 추출
+      const res = await apiFetch("/api/extract-spec", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, currentSpec: contentSpec }),
+      });
+      const { extracted } = await res.json();
+
+      // contentSpec 머지
+      const newSpec = { ...contentSpec, ...extracted };
+      setContentSpec(newSpec);
+
+      // 클라이언트 판단: 필수 필드 체크
+      if (!newSpec.brand) {
+        // brand 없음 → 질문
+        updateMessage(statusId, {
+          content: "어떤 브랜드/주제의 콘텐츠를 만들까요?",
+          type: "options",
+          options: [
+            { label: "AI가 알아서 해주세요", value: "AI가 알아서 해주세요" },
+            { label: "대한항공카드", value: "대한항공카드" },
+            { label: "마켓컬리", value: "마켓컬리" },
+            { label: "자동차대출", value: "자동차대출" },
+          ],
+        });
+        raiseSheet();
+      } else if (!newSpec.content) {
+        // brand 있고 content 없음 → 소재 추천 요청
+        updateMessage(statusId, { content: `${newSpec.brand} 관련 소재를 찾고 있어요...`, type: "status" });
+        try {
+          const suggestRes = await apiFetch("/api/suggest-content", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ brand: newSpec.brand }),
+          });
+          const { suggestions } = await suggestRes.json();
+          const options = [
+            { label: "AI가 알아서 해주세요", value: "AI가 알아서 해주세요" },
+            ...((suggestions as string[]) || []).map((s: string) => ({ label: s, value: s })),
+          ];
+          updateMessage(statusId, {
+            content: `${newSpec.brand} 관련 어떤 내용을 담을까요?`,
+            type: "options",
+            options,
+          });
+        } catch {
+          updateMessage(statusId, {
+            content: `${newSpec.brand} 관련 어떤 내용을 담을까요?`,
+            type: "options",
+            options: [{ label: "AI가 알아서 해주세요", value: "AI가 알아서 해주세요" }],
+          });
+        }
+        raiseSheet();
+      } else if (newSpec.textDraft && !contentSpec.textDraft) {
+        // 텍스트 초안이 방금 입력됨 → 3안 제시
+        updateMessage(statusId, {
+          content: "초안을 받았어요! 어떻게 활용할까요?",
+          type: "options",
+          options: [
+            { label: "초안 바로 적용", value: "초안 바로 적용" },
+            { label: "초안 보정해서 적용", value: "초안 보정해서 적용" },
+            { label: "초안 기반 새로 생성", value: "초안 기반 새로 생성" },
+          ],
+        });
+        raiseSheet();
+      } else {
+        // brand + content 확정 → 부족한 필드만 질문
+        const hasText = !!newSpec.textDraft;
+        const hasImage = !!newSpec.imageSource;
+
+        if (hasText && hasImage) {
+          // 모두 확정 → 바로 생성
+          const prompt = [newSpec.brand, newSpec.content].filter(Boolean).join(" ");
+          updateMessage(statusId, { content: "만들어볼게요!", type: "text" });
+          await handleSend(prompt);
+        } else if (hasText && !hasImage) {
+          // 텍스트 있고 이미지 없음 → 이미지만 질문
+          updateMessage(statusId, {
+            content: `텍스트는 받았어요! 이미지는 어떻게 할까요?`,
+            type: "options",
+            options: [
+              { label: "AI가 바로 만들기", value: "AI가 바로 만들기" },
+              { label: "이미지 있어요", value: "이미지 있어요" },
+            ],
+          });
+        } else if (!hasText && hasImage) {
+          // 이미지 있고 텍스트 없음 → 텍스트만 질문
+          updateMessage(statusId, {
+            content: `이미지는 받았어요! 텍스트는 어떻게 할까요?`,
+            type: "options",
+            options: [
+              { label: "AI가 바로 만들기", value: "AI가 바로 만들기" },
+              { label: "텍스트 초안 있어요", value: "텍스트 초안 있어요" },
+            ],
+          });
+        } else {
+          // 둘 다 없음 → 전체 옵션
+          updateMessage(statusId, {
+            content: `${newSpec.brand} — ${newSpec.content}`,
+            type: "options",
+            options: [
+              { label: "AI가 바로 만들기", value: "AI가 바로 만들기" },
+              { label: "텍스트 초안 있어요", value: "텍스트 초안 있어요" },
+              { label: "이미지 있어요", value: "이미지 있어요" },
+              { label: "둘 다 있어요", value: "둘 다 있어요" },
+            ],
+          });
+        }
+        raiseSheet();
+      }
+    } catch (e) {
+      console.error("[extract-spec] error:", e);
       await handleSend(text, images);
     }
   };
 
   const textColor = composite.textColor === "BK" ? "#000000" : "#FFFFFF";
 
-  const PRESETS = [
-    "스타벅스 브랜드 혜택 카드",
-    "Amex 도쿄 다이닝 혜택",
-    "맞춤 혜택 추천 마켓컬리",
-    "현대카드 Boutique 소개",
-    "자동차담보대출 안내",
-  ];
 
   // API 키 로딩 중
   if (apiKeyReady === null) {
-    return <div className="h-[100dvh] flex items-center justify-center bg-gray-200"><div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" /></div>;
+    return <div className="h-[100dvh] flex items-center justify-center bg-[#555]"><div className="w-4 h-4 border-2 border-gray-400 border-t-white rounded-full animate-spin" /></div>;
   }
 
   // API 키 미설정 → 설정 화면
@@ -691,18 +1110,22 @@ export default function Home() {
   }
 
   return (
-    <div className="h-[100dvh] flex items-center justify-center bg-gray-200">
-      <div className="w-full h-full sm:w-[375px] sm:max-h-[812px] flex flex-col bg-gray-100 overflow-hidden sm:shadow-2xl sm:rounded-[2rem] sm:border sm:border-gray-200 relative">
+    <div className="h-[100dvh] flex items-center justify-center bg-[#555]">
+      <div className="w-full h-full sm:max-w-[430px] sm:max-h-[932px] flex flex-col bg-[#555] overflow-hidden sm:shadow-2xl sm:rounded-[2rem] sm:border sm:border-gray-700 relative">
 
         {/* 메인: 디바이스 목업 */}
-        <div className="flex-1 flex flex-col items-center justify-start pt-4 overflow-hidden">
+        <div
+          ref={deviceContainerRef}
+          className="flex-1 flex flex-col items-center justify-start overflow-hidden"
+        >
           <div className="relative">
             <DeviceViewer
               content={composite}
               onFieldClick={hasContent ? (field: CTTextField, _rect: DOMRect) => handleFieldClick(field) : undefined}
+              onToggleTextColor={undefined}
               scale={SCALE}
               skeleton={hasContent}
-              cropRatio={0.86}
+              cropRatio={1}
             />
 
             {/* 캐러셀 레이어 — 목업 위, CT 카드 영역에 클리핑 */}
@@ -798,13 +1221,6 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* 하트 아이콘 */}
-                <div className="absolute pointer-events-none" style={{ top: 14*SCALE, right: 14*SCALE }}>
-                  <svg width={26*SCALE} height={26*SCALE} viewBox="0 0 26 26" fill="none">
-                    <path fillRule="evenodd" clipRule="evenodd" d="M4.95665 7.02891C6.96199 5.02357 10.2133 5.02356 12.2186 7.02891L13 7.81028L13.7814 7.02892C15.7867 5.02357 19.038 5.02357 21.0433 7.02891C23.0487 9.03426 23.0487 12.2855 21.0433 14.2909L13.71 21.6242C13.3179 22.0164 12.6821 22.0164 12.29 21.6242L4.95665 14.2909C2.9513 12.2855 2.9513 9.03426 4.95665 7.02891ZM10.8398 8.40776C9.59597 7.16395 7.57933 7.16394 6.3355 8.40777C5.09168 9.65159 5.09168 11.6682 6.3355 12.912L13 19.5765L19.6645 12.912C20.9083 11.6682 20.9083 9.65159 19.6645 8.40777C18.4207 7.16394 16.404 7.16395 15.1602 8.40776L13 10.568L10.8398 8.40776Z" fill="white" fillOpacity="0.48"/>
-                  </svg>
-                </div>
-
                 {/* 첫 생성 힌트 */}
                 {showHint && (
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none animate-pulse">
@@ -816,127 +1232,150 @@ export default function Home() {
               </div>
             )}
 
-            {/* 풀별 도트 인디케이터 */}
-            {hasContent && (
-              <div className="flex flex-col items-center gap-1 mt-2">
-                {[
-                  { pool: copyPool, sel: selCopy, label: "문구" },
-                  { pool: imagePool, sel: selImage, label: "이미지" },
-                  { pool: subPool, sel: selSub, label: "하단" },
-                ].map(({ pool, sel, label }) =>
-                  pool.length > 1 && (
-                    <div key={label} className="flex items-center gap-1">
-                      <span className="text-[8px] text-gray-400 w-7 text-right mr-0.5">{label}</span>
-                      {pool.map((_, i) => (
-                        <div
-                          key={i}
-                          className="rounded-full transition-all duration-200"
-                          style={{
-                            width: i === sel ? 12 : 4,
-                            height: 4,
-                            backgroundColor: i === sel ? "#374151" : "#D1D5DB",
-                          }}
-                        />
-                      ))}
-                    </div>
-                  )
-                )}
-              </div>
-            )}
+{/* 인디케이터는 바텀시트로 이동 */}
           </div>
         </div>
 
-        {/* 하단 플로팅 */}
-        <div className="absolute bottom-0 left-0 right-0 z-10">
-          <div className="h-6 bg-gradient-to-t from-gray-100 to-transparent pointer-events-none" />
-
-          <div className="bg-gray-100 px-4 pb-5 sm:pb-5 pt-0 space-y-1.5" style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))" }}>
-            {/* 변주 버튼 바 (콘텐츠 있을 때) */}
-            {hasContent && (
-              <div className="flex items-center justify-center gap-2">
-                <VariateButton label="상단 문구" onClick={() => handleVariateClick("copy")} loading={variatingField === "copy"} count={copyPool.length} />
-                <VariateButton label="이미지" onClick={() => handleVariateClick("image")} loading={variatingField === "image"} count={imagePool.length} />
-                <VariateButton label="하단 문구" onClick={() => handleVariateClick("sub")} loading={variatingField === "sub"} count={subPool.length} />
+        {/* 하단 바텀시트 */}
+        <div
+          className="shrink-0 z-10 relative -mt-[15px]"
+          style={{
+            height: sheetHeight + 15,
+            borderRadius: "15px 15px 0 0",
+            paddingBottom: "env(safe-area-inset-bottom)",
+            transition: sheetSnapping ? "height 0.25s ease-out" : "none",
+            background: "linear-gradient(to bottom, #666 0%, #666 70%, #555 100%)",
+          }}
+        >
+          {/* 드래그 핸들 */}
+          <div
+            className="flex justify-center pt-3 pb-5 cursor-grab active:cursor-grabbing touch-none"
+            onMouseDown={(e) => {
+              onDragStart(e.clientY);
+              const onMove = (me: MouseEvent) => onDragMove(me.clientY);
+              const onUp = () => { onDragEnd(); window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+              window.addEventListener("mousemove", onMove);
+              window.addEventListener("mouseup", onUp);
+            }}
+            onTouchStart={(e) => {
+              onDragStart(e.touches[0].clientY);
+              const onMove = (te: TouchEvent) => onDragMove(te.touches[0].clientY);
+              const onUp = () => { onDragEnd(); window.removeEventListener("touchmove", onMove); window.removeEventListener("touchend", onUp); };
+              window.addEventListener("touchmove", onMove, { passive: true });
+              window.addEventListener("touchend", onUp);
+            }}
+          >
+            <div className="w-10 h-1 rounded-full bg-[#444]" />
+          </div>
+          {/* 풀별 도트 인디케이터 + 액션 버튼 */}
+          {hasContent && (
+            <div className="flex items-center px-4 pb-2 -mt-2">
+              {/* 인디케이터 — 중앙 */}
+              <div className="flex-1 flex items-center justify-center gap-4">
+                {[
+                  { pool: copyPool, sel: selCopy, label: "상단문구" },
+                  { pool: imagePool, sel: selImage, label: "이미지" },
+                  { pool: subPool, sel: selSub, label: "하단문구" },
+                ].map(({ pool, sel, label }) => {
+                  const isImageLoading = label === "이미지" && pool.length === 0 && isLoading;
+                  if (pool.length <= 1 && !isImageLoading) return null;
+                  return (
+                    <div key={label} className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-gray-400 mr-0.5">{label}</span>
+                      {isImageLoading ? (
+                        <div className="w-3 h-3 border border-gray-400 border-t-white rounded-full animate-spin" />
+                      ) : (
+                        pool.map((_, i) => (
+                          <div
+                            key={i}
+                            className="rounded-full transition-all duration-200"
+                            style={{
+                              width: i === sel ? 16 : 6,
+                              height: 6,
+                              backgroundColor: i === sel ? "#fff" : "rgba(255,255,255,0.3)",
+                            }}
+                          />
+                        ))
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            )}
-
-            {/* 저장 버튼 (콘텐츠 있을 때) */}
-            {hasContent && (
-              <div className="flex justify-end">
+              {/* 우측 액션: 글자색 토글 + 이미지 받기 */}
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => {
+                    const newColor = composite.textColor === "WT" ? "BK" : "WT";
+                    const newBg = newColor === "WT"
+                      ? { type: "gradient" as const, direction: "dark" as const, stops: [{ position: 0, opacity: 0.6 }, { position: 100, opacity: 0 }] }
+                      : { type: "gradient" as const, direction: "light" as const, stops: [{ position: 0, opacity: 0.6 }, { position: 100, opacity: 0 }] };
+                    setImagePool((prev) => prev.map((img, i) =>
+                      i === selImage ? { ...img, textColor: newColor as "BK" | "WT", bgTreatment: newBg } : img
+                    ));
+                  }}
+                  className="w-7 h-7 rounded-full flex items-center justify-center border transition-colors"
+                  style={{
+                    backgroundColor: composite.textColor === "WT" ? "#fff" : "#1a1a1a",
+                    borderColor: composite.textColor === "WT" ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.2)",
+                    color: composite.textColor === "WT" ? "#555" : "#fff",
+                  }}
+                  title={`글자색: ${composite.textColor === "WT" ? "흰색→검정" : "검정→흰색"}`}
+                >
+                  <span className="text-[10px] font-bold">{composite.textColor === "WT" ? "W" : "B"}</span>
+                </button>
                 <button
                   onClick={() => exportCtPng(composite)}
-                  className="flex items-center gap-1 px-3 py-1 text-[11px] text-gray-400 hover:text-gray-600 transition-colors"
-                  title="이미지 저장 (WebP @3x)"
+                  className="w-7 h-7 rounded-full flex items-center justify-center bg-white/20 hover:bg-white/30 transition-colors"
+                  title="이미지 받기 (WebP 3x)"
                 >
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                     <polyline points="7 10 12 15 17 10" />
                     <line x1="12" y1="15" x2="12" y2="3" />
                   </svg>
-                  <span>이미지 저장</span>
                 </button>
               </div>
-            )}
-
-            {/* 프리셋 (첫 화면) */}
-            {!hasContent && !isLoading && (
-              <div className="flex flex-wrap gap-1.5 justify-center pb-1">
-                {PRESETS.map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => handleMessage(p)}
-                    className="px-3 py-1.5 text-xs text-gray-500 bg-white border border-gray-200 rounded-full hover:bg-gray-100 transition-colors"
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* 상태 메시지 */}
-            {statusMessage && (
-              <div className="flex items-center gap-2 px-1">
-                {isLoading && (
-                  <div className="w-3 h-3 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin shrink-0" />
-                )}
-                <p className="text-xs text-gray-500">{statusMessage}</p>
-                {!isLoading && (
-                  <button onClick={clearStatus} className="text-gray-300 hover:text-gray-500 ml-auto shrink-0">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* 텍스트 수정 시트 */}
-            {editingField && (
+            </div>
+          )}
+          {/* 텍스트 수정 시트 (오버레이) */}
+          {editingField && (
+            <div className="absolute inset-0 z-20 bg-[#666] px-4 pt-3 flex flex-col">
               <EditSheet
                 field={editingField.field}
                 value={editingField.value}
                 onSave={(v) => handleFieldSave(editingField.field, v)}
                 onCancel={() => setEditingField(null)}
               />
-            )}
-
-            {/* 변주 입력 모드 */}
-            {variateInput && !editingField && (
+            </div>
+          )}
+          {/* 변주 입력 모드 (오버레이) */}
+          {variateInput && !editingField && (
+            <div className="absolute inset-0 z-20 bg-[#666] px-4 pt-3 flex flex-col">
               <VariateInputSheet
                 field={variateInput}
                 onSubmit={handleVariateSubmit}
                 onCancel={() => setVariateInput(null)}
                 loading={variatingField !== null}
               />
-            )}
-
-            {/* 일반 입력창 */}
-            {!editingField && !variateInput && (
-              <ChatInput onSubmit={handleMessage} disabled={isLoading} autoFocus />
-            )}
-          </div>
+            </div>
+          )}
+          <ChatPanel
+            messages={messages}
+            onSend={handleMessage}
+            isLoading={isLoading}
+            genStatus={statusMessage as GenerationStatus}
+            placeholder={chatPlaceholder}
+            collapsed={sheetHeight <= 100}
+            highlightAttach={highlightAttach}
+            onReport={() => setShowReport(true)}
+            onInputFocusChange={handleInputFocusChange}
+          />
         </div>
       </div>
+
+      {showReport && hasContent && (
+        <ReportModal content={composite} onClose={() => setShowReport(false)} />
+      )}
     </div>
   );
 }
