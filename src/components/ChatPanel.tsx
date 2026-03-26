@@ -92,7 +92,7 @@ function ThumbsButtons({ msgId, onQuickRate, onReport }: {
         onClick={() => handleRate("good")}
         disabled={disabled}
         className={`p-2.5 rounded-full transition-colors ${
-          rated === "good" ? "text-amber-400" : disabled ? "text-gray-500 opacity-50" : "text-gray-400 hover:text-gray-200"
+          rated === "good" ? "text-amber-400" : disabled ? "text-gray-500 opacity-50" : "text-ds-text-muted hover:text-gray-200"
         }`}
         title="좋아요"
       >
@@ -106,7 +106,7 @@ function ThumbsButtons({ msgId, onQuickRate, onReport }: {
         onClick={() => handleRate("bad")}
         disabled={disabled}
         className={`p-2.5 rounded-full transition-colors ${
-          rated === "bad" ? "text-amber-400" : disabled ? "text-gray-500 opacity-50" : "text-gray-400 hover:text-gray-200"
+          rated === "bad" ? "text-amber-400" : disabled ? "text-gray-500 opacity-50" : "text-ds-text-muted hover:text-gray-200"
         }`}
         title="안좋아요"
       >
@@ -118,7 +118,7 @@ function ThumbsButtons({ msgId, onQuickRate, onReport }: {
       {/* 상세 피드백 */}
       <button
         onClick={() => onReport?.(null)}
-        className="ml-2 px-2.5 py-1 text-[11px] text-gray-300 bg-[#555] border border-[#777] rounded-full hover:bg-[#666] transition-colors"
+        className="ml-2 px-2.5 py-1 text-[11px] text-ds-text-secondary bg-ds-base border border-ds-border rounded-full hover:bg-ds-surface transition-colors"
       >
         상세 피드백
       </button>
@@ -150,7 +150,7 @@ export default function ChatPanel({ messages, onSend, isLoading, genStatus, onVi
       {/* 빈 상태: 입력창만 위쪽에 */}
       {isEmpty ? (
         <div className="flex-1 flex flex-col justify-start px-4 pt-2">
-          <p className="text-gray-400 text-xs text-center leading-relaxed mb-3">
+          <p className="text-ds-text-muted text-xs text-center leading-relaxed mb-3">
             브랜드와 소재를 알려주세요.{"\n"}
             예: &apos;현대카드 여행 혜택 콘텐츠 만들어줘&apos;
           </p>
@@ -184,7 +184,7 @@ export default function ChatPanel({ messages, onSend, isLoading, genStatus, onVi
           // status 메시지
           if (msg.type === "status") {
             return (
-              <div key={msg.id} className="flex items-center gap-2 text-xs text-gray-300 px-1">
+              <div key={msg.id} className="flex items-center gap-2 text-xs text-ds-text-secondary px-1">
                 <div className="w-3 h-3 border-2 border-gray-500 border-t-gray-300 rounded-full animate-spin shrink-0" />
                 {msg.content}
               </div>
@@ -195,7 +195,7 @@ export default function ChatPanel({ messages, onSend, isLoading, genStatus, onVi
           return (
             <div key={msg.id} className="space-y-2">
               <div>
-                <div className="text-sm text-gray-100 whitespace-pre-wrap">{msg.content}</div>
+                <div className="text-sm text-ds-text whitespace-pre-wrap">{msg.content}</div>
                 {msg.showReport && onReport && (
                   <ThumbsButtons msgId={msg.id} onQuickRate={onQuickRate} onReport={onReport} />
                 )}
@@ -214,8 +214,8 @@ export default function ChatPanel({ messages, onSend, isLoading, genStatus, onVi
                         onClick={() => onSend(opt.value)}
                         disabled={isLoading}
                         className={isPrimary
-                          ? "px-3 py-1.5 text-xs text-white bg-indigo-500 rounded-full hover:bg-indigo-600 transition-colors disabled:opacity-50 font-medium"
-                          : "px-3 py-1.5 text-xs text-gray-100 bg-[#888] rounded-full hover:bg-[#999] transition-colors disabled:opacity-50"
+                          ? "px-3 py-1.5 text-xs text-white bg-ds-accent rounded-full hover:bg-ds-accent-hover transition-colors disabled:opacity-50 font-medium"
+                          : "px-3 py-1.5 text-xs text-ds-text bg-ds-overlay rounded-full hover:bg-ds-border-strong transition-colors disabled:opacity-50"
                         }
                       >
                         {opt.label.replace(/^\d+\.\s*/, "")}
@@ -239,7 +239,7 @@ export default function ChatPanel({ messages, onSend, isLoading, genStatus, onVi
 
         {/* 로딩 상태 — genStatus 있으면 항상 표시 */}
         {isLoading && (genStatus || !messages.some(m => m.type === "status")) && (
-          <div className="flex items-center gap-2 text-xs text-gray-300 px-1">
+          <div className="flex items-center gap-2 text-xs text-ds-text-secondary px-1">
             <span className="inline-flex gap-0.5">
               <span className="w-1.5 h-1.5 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
               <span className="w-1.5 h-1.5 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />

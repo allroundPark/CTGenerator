@@ -5,6 +5,22 @@ import { ContentSpec, CTContent, BrandContext } from "@/types/ct";
 
 type ApiFetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 
+// ── fetchWithTimeout: AbortController 기반 타임아웃 래퍼 ──
+async function fetchWithTimeout(
+  apiFetch: ApiFetchFn,
+  url: string,
+  init: RequestInit,
+  timeoutMs = 30000,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await apiFetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ── extract-spec: 유저 발화에서 ContentSpec 필드 추출 ──
 export async function extractSpec(
   message: string,
@@ -12,7 +28,7 @@ export async function extractSpec(
   apiFetch: ApiFetchFn,
 ): Promise<Partial<ContentSpec>> {
   try {
-    const res = await apiFetch("/api/extract-spec", {
+    const res = await fetchWithTimeout(apiFetch, "/api/extract-spec", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message, currentSpec }),
@@ -52,7 +68,7 @@ export async function searchBrand(
   apiFetch: ApiFetchFn,
 ): Promise<BrandContext | null> {
   try {
-    const res = await apiFetch("/api/search-brand", {
+    const res = await fetchWithTimeout(apiFetch, "/api/search-brand", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query }),
@@ -71,7 +87,7 @@ export async function generateText(
   brandContext: BrandContext | null,
   apiFetch: ApiFetchFn,
 ): Promise<CTContent[]> {
-  const res = await apiFetch("/api/generate", {
+  const res = await fetchWithTimeout(apiFetch, "/api/generate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -121,7 +137,7 @@ async function generateSingleImage(
   apiFetch: ApiFetchFn,
 ): Promise<string | null> {
   try {
-    const res = await apiFetch("/api/generate-image", {
+    const res = await fetchWithTimeout(apiFetch, "/api/generate-image", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -137,7 +153,7 @@ async function generateSingleImage(
         ...(opts.referenceImages?.length ? { referenceImages: opts.referenceImages } : {}),
         ...(opts.enhance ? { enhance: true } : {}),
       }),
-    });
+    }, 60000);
     if (!res.ok) return null;
     const data = await res.json();
     return data.image ? `data:${data.image.mimeType};base64,${data.image.data}` : null;
@@ -154,7 +170,7 @@ export async function suggestField(
   apiFetch: ApiFetchFn,
 ): Promise<[string, string][]> {
   try {
-    const res = await apiFetch("/api/suggest", {
+    const res = await fetchWithTimeout(apiFetch, "/api/suggest", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -177,7 +193,7 @@ export async function suggestContent(
   apiFetch: ApiFetchFn,
 ): Promise<string[]> {
   try {
-    const res = await apiFetch("/api/suggest-content", {
+    const res = await fetchWithTimeout(apiFetch, "/api/suggest-content", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ brand }),

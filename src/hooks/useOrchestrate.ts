@@ -19,6 +19,7 @@ import {
   suggestField,
   suggestContent,
 } from "@/lib/orchestrate";
+import { matchDemoScenario, loadDemoCache } from "@/lib/demoCache";
 import { getKnownBrandContext } from "@/lib/imagePrompt";
 import { supabase } from "@/lib/supabase";
 import { getDeviceId } from "@/lib/deviceId";
@@ -392,27 +393,55 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
     });
   };
 
-  // ── handleSend: 통합 생성 (first + modification) ──
+  // ── handleSend: 통합 생성 (first + modification) + 재시도 + 캐시 fallback ──
   const handleSend = async (text: string, attachedImages?: AttachedImage[]) => {
     setIsLoading(true);
-    try {
+
+    const doGenerate = async () => {
       if (pools.hasContent) {
         const intent = await handleModification(text, attachedImages);
-        // new/all intent → pools가 리셋됨 → 첫 생성으로 전환
         if (intent === "new" || intent === "all") {
           await handleFirstGeneration(text, attachedImages);
         }
       } else {
         await handleFirstGeneration(text, attachedImages);
       }
-    } catch (e) {
-      showStatus(
-        `오류: ${e instanceof Error ? e.message : "알 수 없는 오류"}`,
-      );
-      chat.addMessage({
-        role: "assistant",
-        content: `오류가 발생했어요: ${e instanceof Error ? e.message : "알 수 없는 오류"}`,
-      });
+    };
+
+    try {
+      await doGenerate();
+    } catch (firstError) {
+      // 1회 재시도
+      try {
+        showStatus("다시 시도하는 중...");
+        await doGenerate();
+      } catch (retryError) {
+        // 캐시 fallback
+        const scenarioId = await matchDemoScenario(text);
+        if (scenarioId) {
+          const cached = await loadDemoCache(scenarioId);
+          if (cached) {
+            pools.appendToPool(cached.variants);
+            cached.images.forEach((img) =>
+              pools.addImageToPool(img.url, img.textColor, img.bgTreatment),
+            );
+            showStatus("캐시된 결과를 보여드려요.");
+            chat.addMessage({
+              role: "assistant",
+              content: "완성! 이상한 거 있으면 추가 요청해주세요.",
+              showReport: true,
+            });
+            return;
+          }
+        }
+        // 캐시도 없음
+        const msg = retryError instanceof Error ? retryError.message : "알 수 없는 오류";
+        showStatus(`오류: ${msg}`);
+        chat.addMessage({
+          role: "assistant",
+          content: `오류가 발생했어요: ${msg}`,
+        });
+      }
     } finally {
       setIsLoading(false);
     }

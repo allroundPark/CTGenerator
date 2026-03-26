@@ -100,7 +100,7 @@ export default function ChatInput({
 
   return (
     <div
-      className={`bg-[#777] border border-[#888] ${
+      className={`bg-ds-elevated border border-ds-border ${
         large ? "rounded-2xl p-4" : "rounded-xl p-2"
       }`}
     >
@@ -140,27 +140,27 @@ export default function ChatInput({
               {/* 삭제 버튼 */}
               <button
                 onClick={() => removeImage(idx)}
-                className="absolute -top-1.5 -right-1.5 bg-white text-[#555] rounded-full w-4 h-4 flex items-center justify-center text-[9px] opacity-0 group-hover:opacity-100 transition-opacity"
+                className="absolute -top-1.5 -right-1.5 bg-white text-ds-text-inverse rounded-full w-4 h-4 flex items-center justify-center text-[9px] opacity-0 group-hover:opacity-100 transition-opacity"
               >
                 ✕
               </button>
 
               {/* 옵션 드롭다운 */}
               {showOptions === idx && (
-                <div className="absolute bottom-full left-0 mb-1 bg-[#555] border border-[#777] rounded-lg shadow-lg z-10 w-48 py-1">
+                <div className="absolute bottom-full left-0 mb-1 bg-ds-base border border-ds-border rounded-lg shadow-lg z-10 w-48 py-1">
                   {(Object.keys(OPTION_LABELS) as ImageAttachOption[]).map((opt) => (
                     <button
                       key={opt}
                       onClick={() => updateOption(idx, opt)}
-                      className={`w-full text-left px-3 py-2 text-xs hover:bg-[#666] transition-colors ${
-                        img.option === opt ? "bg-[#666] font-medium" : ""
+                      className={`w-full text-left px-3 py-2 text-xs hover:bg-ds-surface transition-colors ${
+                        img.option === opt ? "bg-ds-surface font-medium" : ""
                       }`}
                     >
                       <div className="font-medium text-white">
                         {OPTION_LABELS[opt].label}
                         {img.option === opt && <span className="ml-1 text-amber-300">✓</span>}
                       </div>
-                      <div className="text-gray-300 mt-0.5">{OPTION_LABELS[opt].desc}</div>
+                      <div className="text-ds-text-secondary mt-0.5">{OPTION_LABELS[opt].desc}</div>
                     </button>
                   ))}
                 </div>
@@ -172,7 +172,7 @@ export default function ChatInput({
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={disabled}
-            className="h-16 w-16 rounded-lg border-2 border-dashed border-gray-400 flex items-center justify-center text-gray-400 hover:border-gray-300 hover:text-gray-300 transition-colors"
+            className="h-16 w-16 rounded-lg border-2 border-dashed border-ds-text-muted flex items-center justify-center text-ds-text-muted hover:border-ds-text-secondary hover:text-ds-text-secondary transition-colors"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="12" y1="5" x2="12" y2="19" />
@@ -199,7 +199,7 @@ export default function ChatInput({
             className={`shrink-0 transition-colors disabled:opacity-30 w-9 h-9 flex items-center justify-center ${
               highlightAttach
                 ? "text-amber-400 animate-pulse hover:text-amber-300"
-                : "text-gray-300 hover:text-white"
+                : "text-ds-text-secondary hover:text-white"
             }`}
             title="이미지 첨부 (여러 장 가능)"
           >
@@ -221,13 +221,13 @@ export default function ChatInput({
           placeholder={images.length > 0 ? "이미지와 함께 요청을 입력하세요" : placeholder}
           disabled={disabled}
           rows={1}
-          className={`flex-1 resize-none outline-none bg-transparent text-base text-white placeholder:text-gray-300`}
+          className={`flex-1 resize-none outline-none bg-transparent text-base text-white placeholder:text-ds-text-secondary`}
           style={{ fontSize: "16px" }}
         />
         <button
           onClick={handleSubmit}
           disabled={disabled || (!value.trim() && images.length === 0)}
-          className={`shrink-0 rounded-lg bg-white text-[#555] font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-100 h-9 ${
+          className={`shrink-0 rounded-lg bg-white text-ds-text-inverse font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-100 h-9 ${
             large ? "px-4 text-sm" : "px-3 text-xs"
           }`}
         >
