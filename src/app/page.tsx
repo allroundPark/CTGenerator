@@ -165,9 +165,6 @@ export default function Home() {
 
   // ── 스와이프 ──
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
-  const handleCardTouchStart = (e: React.TouchEvent) => {
-    swipeStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-  };
   const handleSwipeEnd = (clientX: number, zone: "copy" | "image" | "sub") => {
     if (!swipeStartRef.current || !orch.hasContent) return;
     const dx = swipeStartRef.current.x - clientX;
@@ -176,13 +173,22 @@ export default function Home() {
     orch.handleSwipe(zone, dx > 0 ? 1 : -1);
     setShowHint(false);
   };
-  const handleCardTouchEnd = (e: React.TouchEvent, zone: "copy" | "image" | "sub") =>
+  const handleCardTouchStart = (e: React.TouchEvent) => {
+    e.stopPropagation();
+    swipeStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  };
+  const handleCardTouchEnd = (e: React.TouchEvent, zone: "copy" | "image" | "sub") => {
+    e.stopPropagation();
     handleSwipeEnd(e.changedTouches[0].clientX, zone);
+  };
   const handleCardMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
     swipeStartRef.current = { x: e.clientX, y: e.clientY };
   };
-  const handleCardMouseUp = (e: React.MouseEvent, zone: "copy" | "image" | "sub") =>
+  const handleCardMouseUp = (e: React.MouseEvent, zone: "copy" | "image" | "sub") => {
+    e.stopPropagation();
     handleSwipeEnd(e.clientX, zone);
+  };
 
   // ── 필드 클릭 → 수정 모드 ──
   const handleFieldClick = useCallback((field: CTTextField) => {
@@ -402,7 +408,7 @@ export default function Home() {
 
         {/* 바텀시트 */}
         <div
-          className="shrink-0 z-10 relative -mt-[15px]"
+          className="shrink-0 z-10 relative -mt-[15px] flex flex-col overflow-hidden"
           style={{
             height: sheetHeight + 15,
             borderRadius: "15px 15px 0 0",
@@ -523,6 +529,7 @@ export default function Home() {
             </div>
           )}
 
+          <div className="flex-1 min-h-0">
           <ChatPanel
             messages={orch.messages}
             onSend={orch.handleMessage}
@@ -536,6 +543,7 @@ export default function Home() {
             onInputFocusChange={handleInputFocusChange}
             hasContent={orch.hasContent}
           />
+          </div>
         </div>
       </div>
 
