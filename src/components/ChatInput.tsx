@@ -11,6 +11,7 @@ interface ChatInputProps {
   large?: boolean;
   highlightAttach?: boolean;
   onFocusChange?: (focused: boolean) => void;
+  hasContent?: boolean;
 }
 
 const OPTION_LABELS: Record<ImageAttachOption, { label: string; desc: string }> = {
@@ -27,6 +28,7 @@ export default function ChatInput({
   large = false,
   highlightAttach = false,
   onFocusChange,
+  hasContent = false,
 }: ChatInputProps) {
   const [value, setValue] = useState("");
   const [images, setImages] = useState<AttachedImage[]>([]);
@@ -145,7 +147,7 @@ export default function ChatInput({
 
               {/* 옵션 드롭다운 */}
               {showOptions === idx && (
-                <div className="absolute top-full left-0 mt-1 bg-[#555] border border-[#777] rounded-lg shadow-lg z-10 w-48 py-1">
+                <div className="absolute bottom-full left-0 mb-1 bg-[#555] border border-[#777] rounded-lg shadow-lg z-10 w-48 py-1">
                   {(Object.keys(OPTION_LABELS) as ImageAttachOption[]).map((opt) => (
                     <button
                       key={opt}
@@ -229,7 +231,7 @@ export default function ChatInput({
             large ? "px-4 text-sm" : "px-3 text-xs"
           }`}
         >
-          {disabled ? "생성 중..." : "생성"}
+          {disabled ? "생성 중..." : hasContent ? "보내기" : "만들기"}
         </button>
       </div>
     </div>

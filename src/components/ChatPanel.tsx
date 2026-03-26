@@ -1,8 +1,10 @@
 "use client";
 
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import { ChatMessage, AttachedImage, GenerationStatus, CTContent, CT_BASE_WIDTH, CT_BASE_HEIGHT } from "@/types/ct";
 import ChatInput from "./ChatInput";
+
+type ReportRating = "good" | "bad" | null;
 
 interface ChatPanelProps {
   messages: ChatMessage[];
@@ -10,11 +12,13 @@ interface ChatPanelProps {
   isLoading: boolean;
   genStatus?: GenerationStatus;
   onViewCanvas?: () => void;
-  onReport?: () => void;
+  onReport?: (rating?: ReportRating) => void;
+  onQuickRate?: (msgId: string, rating: "good" | "bad") => Promise<boolean>;
   onInputFocusChange?: (focused: boolean) => void;
   placeholder?: string;
   collapsed?: boolean;
   highlightAttach?: boolean;
+  hasContent?: boolean;
 }
 
 /** 채팅 말풍선 안 미니 카드 프리뷰 */
@@ -42,12 +46,87 @@ function MiniCardPreview({ variant, onTap }: { variant: CTContent; onTap?: () =>
           <div style={{ fontSize: 10, fontWeight: 700, marginTop: 2, lineHeight: 1.3 }}>{variant.titleLine1}</div>
           <div style={{ fontSize: 10, fontWeight: 700, lineHeight: 1.3 }}>{variant.titleLine2}</div>
         </div>
+        {/* 확대 힌트 */}
+        <div className="absolute bottom-1 right-1 opacity-60">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 3 21 3 21 9" />
+            <polyline points="9 21 3 21 3 15" />
+            <line x1="21" y1="3" x2="14" y2="10" />
+            <line x1="3" y1="21" x2="10" y2="14" />
+          </svg>
+        </div>
       </div>
     </button>
   );
 }
 
-export default function ChatPanel({ messages, onSend, isLoading, genStatus, onViewCanvas, onReport, onInputFocusChange, placeholder, collapsed, highlightAttach }: ChatPanelProps) {
+/** 👍👎 피드백 버튼 */
+function ThumbsButtons({ msgId, onQuickRate, onReport }: {
+  msgId: string;
+  onQuickRate?: (msgId: string, rating: "good" | "bad") => Promise<boolean>;
+  onReport?: (rating?: ReportRating) => void;
+}) {
+  const [rated, setRated] = useState<"good" | "bad" | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const handleRate = async (rating: "good" | "bad") => {
+    if (rated || saving) return;
+    setSaving(true);
+    if (rating === "bad") {
+      setRated("bad");
+      setSaving(false);
+      onReport?.("bad");
+      return;
+    }
+    const ok = onQuickRate ? await onQuickRate(msgId, rating) : false;
+    setSaving(false);
+    if (ok) setRated(rating);
+  };
+
+  const disabled = rated !== null || saving;
+
+  return (
+    <div className="flex items-center gap-1 mt-1.5">
+      {/* 👍 */}
+      <button
+        onClick={() => handleRate("good")}
+        disabled={disabled}
+        className={`p-2.5 rounded-full transition-colors ${
+          rated === "good" ? "text-amber-400" : disabled ? "text-gray-500 opacity-50" : "text-gray-400 hover:text-gray-200"
+        }`}
+        title="좋아요"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill={rated === "good" ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M7 22V11l5-10 1.5.5c1 .3 1.5 1.5 1 2.5L13 9h6a2 2 0 0 1 2 2v2a6 6 0 0 1-.2 1.5l-1.8 6A2 2 0 0 1 17 22H7z" />
+          <path d="M2 11h3v11H2z" />
+        </svg>
+      </button>
+      {/* 👎 */}
+      <button
+        onClick={() => handleRate("bad")}
+        disabled={disabled}
+        className={`p-2.5 rounded-full transition-colors ${
+          rated === "bad" ? "text-amber-400" : disabled ? "text-gray-500 opacity-50" : "text-gray-400 hover:text-gray-200"
+        }`}
+        title="안좋아요"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill={rated === "bad" ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M17 2H7a2 2 0 0 0-2 1.5l-1.8 6A6 6 0 0 0 3 11v2a2 2 0 0 0 2 2h6l-1.5 4.5c-.5 1 0 2.2 1 2.5L12 23l5-10V2z" />
+          <path d="M19 2h3v11h-3z" />
+        </svg>
+      </button>
+      {/* 상세 피드백 */}
+      <button
+        onClick={() => onReport?.(null)}
+        className="ml-2 px-2.5 py-1 text-[11px] text-gray-300 bg-[#555] border border-[#777] rounded-full hover:bg-[#666] transition-colors"
+      >
+        상세 피드백
+      </button>
+    </div>
+  );
+}
+
+export default function ChatPanel({ messages, onSend, isLoading, genStatus, onViewCanvas, onReport, onQuickRate, onInputFocusChange, placeholder, collapsed, highlightAttach, hasContent }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -59,7 +138,7 @@ export default function ChatPanel({ messages, onSend, isLoading, genStatus, onVi
   if (collapsed) {
     return (
       <div className="flex flex-col justify-start px-4 pt-1 h-full">
-        <ChatInput onSubmit={onSend} disabled={isLoading} placeholder={placeholder} autoFocus={false} highlightAttach={highlightAttach} onFocusChange={onInputFocusChange} />
+        <ChatInput onSubmit={onSend} disabled={isLoading} placeholder={placeholder} autoFocus={false} highlightAttach={highlightAttach} onFocusChange={onInputFocusChange} hasContent={hasContent} />
       </div>
     );
   }
@@ -71,7 +150,11 @@ export default function ChatPanel({ messages, onSend, isLoading, genStatus, onVi
       {/* 빈 상태: 입력창만 위쪽에 */}
       {isEmpty ? (
         <div className="flex-1 flex flex-col justify-start px-4 pt-2">
-          <ChatInput onSubmit={onSend} disabled={isLoading} placeholder={placeholder} autoFocus highlightAttach={highlightAttach} onFocusChange={onInputFocusChange} />
+          <p className="text-gray-400 text-xs text-center leading-relaxed mb-3">
+            브랜드와 소재를 알려주세요.{"\n"}
+            예: &apos;현대카드 여행 혜택 콘텐츠 만들어줘&apos;
+          </p>
+          <ChatInput onSubmit={onSend} disabled={isLoading} placeholder={placeholder} autoFocus highlightAttach={highlightAttach} onFocusChange={onInputFocusChange} hasContent={hasContent} />
         </div>
       ) : (
         <>
@@ -111,15 +194,10 @@ export default function ChatPanel({ messages, onSend, isLoading, genStatus, onVi
           // assistant 메시지
           return (
             <div key={msg.id} className="space-y-2">
-              <div className="flex items-center gap-2">
+              <div>
                 <div className="text-sm text-gray-100 whitespace-pre-wrap">{msg.content}</div>
                 {msg.showReport && onReport && (
-                  <button
-                    onClick={onReport}
-                    className="shrink-0 px-2.5 py-1 text-[11px] text-gray-300 bg-[#555] border border-[#777] rounded-full hover:bg-[#666] transition-colors"
-                  >
-                    피드백
-                  </button>
+                  <ThumbsButtons msgId={msg.id} onQuickRate={onQuickRate} onReport={onReport} />
                 )}
               </div>
 
@@ -175,7 +253,7 @@ export default function ChatPanel({ messages, onSend, isLoading, genStatus, onVi
       {/* 하단 페이드 + 입력바 — 항상 바텀시트 하단 고정 */}
       <div className="shrink-0 relative">
         <div className="px-4 pb-12 pt-1">
-          <ChatInput onSubmit={onSend} disabled={isLoading} placeholder={placeholder} autoFocus highlightAttach={highlightAttach} onFocusChange={onInputFocusChange} />
+          <ChatInput onSubmit={onSend} disabled={isLoading} placeholder={placeholder} autoFocus highlightAttach={highlightAttach} onFocusChange={onInputFocusChange} hasContent={hasContent} />
         </div>
       </div>
         </>

@@ -41,6 +41,13 @@ ${JSON.stringify(currentSpec, null, 2)}
 - 발화에 없는 정보는 절대 추측하지 마
 - brand와 content를 혼동하지 마: brand는 회사/서비스명, content는 그 brand의 구체적 혜택/소재
 
+## 수정 요청 시 (currentSpec에 값이 있는 상태에서 추가 요청)
+- "밝게 해줘", "어둡게", "톤 바꿔" → imageStyle 추출 (예: "밝은 톤", "어두운 톤")
+- "분위기 바꿔", "배경 바꿔" → imageStyle 추출
+- "3D로 바꿔", "실사로" → imageStyle 추출
+- "더 감성적으로", "정보전달 위주로" → textTone 추출
+- 수정 요청에서도 변경하려는 필드만 추출. 나머지는 추출하지 마.
+
 JSON만 반환:
 {"extracted":{"brand":"...", ...}}
 추출된 필드만 포함. 없으면 빈 객체: {"extracted":{}}`;

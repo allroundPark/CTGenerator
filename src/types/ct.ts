@@ -104,6 +104,26 @@ export const EMPTY_SPEC: ContentSpec = {
   generatedPrompt: null, generatedImageType: null, generatedTextColor: null,
 };
 
+// 풀 타입 (Mix & Match)
+export interface CopyOption {
+  label: string;
+  titleLine1: string;
+  titleLine2: string;
+}
+
+export interface SubOption {
+  subLine1: string;
+  subLine2: string;
+}
+
+export interface ImageOption {
+  imageUrl: string;
+  textColor: "BK" | "WT";
+  bgTreatment: BgTreatment;
+  imageConstraint: ImageConstraint;
+  imageType?: string;
+}
+
 // 채팅 메시지
 export interface ChatMessage {
   id: string;

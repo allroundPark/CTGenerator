@@ -8,9 +8,10 @@ import { getDeviceId } from "@/lib/deviceId";
 interface ReportModalProps {
   content: CTContent;
   onClose: () => void;
+  rating?: "good" | "bad" | null;
 }
 
-export default function ReportModal({ content, onClose }: ReportModalProps) {
+export default function ReportModal({ content, onClose, rating }: ReportModalProps) {
   const [memo, setMemo] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
@@ -33,6 +34,7 @@ export default function ReportModal({ content, onClose }: ReportModalProps) {
           imageUrl: content.imageUrl?.startsWith("data:") ? "(base64 생성 이미지)" : content.imageUrl,
         },
         user_memo: memo,
+        rating: rating ?? null,
         resolved: false,
       });
 
