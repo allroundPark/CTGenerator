@@ -109,6 +109,8 @@ export async function generateText(
 export interface ImageGenOpts {
   count?: number;
   enhance?: boolean;
+  edit?: boolean;
+  originalPrompt?: string;
   referenceImages?: { data: string; mimeType: string }[];
 }
 
@@ -152,6 +154,8 @@ async function generateSingleImage(
         variation,
         ...(opts.referenceImages?.length ? { referenceImages: opts.referenceImages } : {}),
         ...(opts.enhance ? { enhance: true } : {}),
+        ...(opts.edit ? { edit: true } : {}),
+        ...(opts.originalPrompt ? { originalPrompt: opts.originalPrompt } : {}),
       }),
     }, 60000);
     if (!res.ok) return null;

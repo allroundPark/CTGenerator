@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { prompt, referenceImages, copyContext, imageType, brandContext, variation, enhance } = body;
+  const { prompt, referenceImages, copyContext, imageType, brandContext, variation, enhance, edit, originalPrompt } = body;
 
   if (!prompt) {
     return NextResponse.json({ error: "prompt is required" }, { status: 400 });
@@ -117,7 +117,24 @@ export async function POST(req: NextRequest) {
   let fullPrompt: string;
   let useSubjectPipeline = false; // 2단계 파이프라인 (주제부 생성 → 상단 확장)
 
-  if (enhance) {
+  if (edit) {
+    // 수정 전용 모드 — 기존 이미지를 기반으로 수정, 2단계 파이프라인 스킵
+    fullPrompt = `You are EDITING an existing card background image. The user wants specific changes applied to the attached image.
+
+ATTACHED: The current card background image that must be preserved as the base.
+USER REQUEST: "${prompt}"
+${originalPrompt ? `\nORIGINAL GENERATION CONTEXT: This image was originally generated for "${originalPrompt}". Maintain the same theme and subject while applying the user's edit request.` : ""}
+
+RULES:
+- PRESERVE the overall composition, subject placement, and layout of the attached image
+- ONLY modify what the user specifically requested (e.g. brightness, color tone, style adjustment)
+- Maintain the same 1:1 square aspect ratio
+- Keep the text-safe zone (top ~35%) with low contrast for text overlay
+- Do NOT regenerate from scratch — this is an EDIT of the existing image
+- The result should look like the same image with targeted modifications, not a completely new image
+- Maximum sharpness and detail — output will be displayed at 3x resolution (1005×1044px)`;
+    console.log(`[image-gen] edit mode, prompt length=${fullPrompt.length}`);
+  } else if (enhance) {
     // 첨부 이미지 보정 모드 — 프리셋 없이 보정 전용 프롬프트
     fullPrompt = `You are enhancing a user-provided image for use as a 1:1 square card background. The output will be exported at 3x resolution (1005×1044px WebP), so maximum sharpness and detail is critical.
 

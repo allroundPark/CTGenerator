@@ -428,6 +428,64 @@ const PRESETS: Record<string, PromptParameters> = {
     atmosphere: "Premium service experience, personal, warm, aspirational",
     constraints: ["No direct frontal face", "Show person from back, side, or cropped", "No text or typography"],
   },
+
+  // ── 스타일 variation 전용 프리셋 (브랜드 색상 동적 주입) ──
+
+  STYLE_3D_claymorphism: {
+    style: "3D illustration, Claymorphism, soft rounded inflated forms, isometric perspective",
+    camera_angle: "Isometric view, 30-degree tilt, slightly elevated",
+    lighting: "Soft studio lighting, clean and bright, minimal harsh shadows, subtle ambient occlusion",
+    color_palette: {
+      primary: ["{BRAND_PRIMARY}", "white", "soft gray"],
+      accents: ["{BRAND_SECONDARY}", "warm highlight"],
+    },
+    composition: {
+      background: "Smooth soft gradient from very light tint of {BRAND_PRIMARY} to white, clean infinite backdrop",
+      center_focus: {
+        description: "Main 3D object representing the subject — reimagined as a cute, friendly clay/balloon object. The subject should be clearly recognizable but stylized as 3D clay.",
+        texture: "Inflated, glossy, smooth clay/balloon texture, soft rounded edges, no sharp corners",
+        colors: "Soft tints of {BRAND_PRIMARY} with white highlights and gentle shadows",
+      },
+      surrounding_elements: {
+        top_left: ["Clean empty area (text overlay safe zone)"],
+        top_center: ["Small floating 3D decorative elements related to the subject"],
+        top_right: ["Tiny 3D accent shapes (spheres, rounded cubes)"],
+        bottom_left: ["Small decorative 3D shapes — rounded cubes, soft cylinders"],
+        bottom_center: ["3D cylindrical pedestals or platforms"],
+        bottom_right: ["Supporting 3D objects that complement the main subject"],
+      },
+    },
+    atmosphere: "Modern, trustworthy, clean, friendly, approachable, playful yet professional",
+    constraints: ["No text or typography", "No realistic photography elements", "Keep ALL shapes rounded and soft — no sharp edges", "Everything must look like inflated clay/balloon material"],
+  },
+
+  STYLE_2D_flat_illustration: {
+    style: "Flat 2D vector illustration, modern graphic design, clean geometric shapes",
+    camera_angle: "Front-facing flat perspective, no depth or 3D effect",
+    lighting: "No realistic lighting — flat colors with optional subtle shadows for depth",
+    color_palette: {
+      primary: ["{BRAND_PRIMARY}", "white", "light gray"],
+      accents: ["{BRAND_SECONDARY}", "complementary pastel"],
+    },
+    composition: {
+      background: "Solid color (very light tint of {BRAND_PRIMARY}) or simple two-tone gradient, clean and minimal",
+      center_focus: {
+        description: "Simplified geometric representation of the subject — bold flat shapes, minimal detail, recognizable silhouette. Think Figma/Dribbble illustration style.",
+        texture: "Flat solid fills, no texture or grain, optional thin outlines",
+        colors: "Bold {BRAND_PRIMARY} with white and {BRAND_SECONDARY} accents",
+      },
+      surrounding_elements: {
+        top_left: ["Clean empty area (text overlay safe zone)"],
+        top_center: ["Simple geometric decorative shapes (circles, dots)"],
+        top_right: ["Small accent icon or shape"],
+        bottom_left: ["Flat decorative elements (abstract shapes, lines)"],
+        bottom_center: ["The main illustrated subject"],
+        bottom_right: ["Supporting flat icons or shapes"],
+      },
+    },
+    atmosphere: "Modern, minimal, clean, trendy, editorial illustration feel",
+    constraints: ["No text or typography", "No realistic photography", "No 3D effects or gradients on objects", "Pure flat vector art aesthetic", "Bold colors, simple shapes"],
+  },
 };
 
 // 프리셋 파라미터 → 자연어 영문 프롬프트
@@ -500,15 +558,11 @@ interface ExternalBrandContext {
   serviceCharacteristics?: string | null;
 }
 
-// 이미지 다양성을 위한 variation 힌트
-const VARIATION_HINTS = [
-  // variation 0: 기본 — 정면/45도, 표준 구도
-  "",
-  // variation 1: 클로즈업, 디테일 포커스
-  "\n\nVARIATION DIRECTIVE: Use a CLOSE-UP or MACRO perspective. Focus tightly on one key detail or element. Shallow depth of field with strong bokeh background. The subject should fill 60-80% of the frame. Use a different camera angle than a standard front view — try overhead, 30-degree low angle, or extreme close-up.",
-  // variation 2: 와이드샷, 환경/공간 강조
-  "\n\nVARIATION DIRECTIVE: Use a WIDE or ENVIRONMENTAL shot. Show the broader context, space, or scene around the subject. The subject should be smaller (30-40% of frame) with rich environmental storytelling. Try a different perspective — bird's eye view, wide establishing shot, or dramatic low angle with leading lines.",
-];
+// 스타일 기반 variation
+// variation 0: 실사 (기존 프리셋 그대로)
+// variation 1: 3D Claymorphism (STYLE_3D_claymorphism 프리셋)
+// variation 2: 2D Flat Illustration (STYLE_2D_flat_illustration 프리셋)
+const STYLE_VARIATION_PRESETS = ["", "STYLE_3D_claymorphism", "STYLE_2D_flat_illustration"];
 
 export function buildImagePrompt(
   userRequest: string,
@@ -518,22 +572,32 @@ export function buildImagePrompt(
   variation?: number,
   subjectOnly?: boolean
 ): string {
-  const type = imageType || "PRODUCTFOCUSED";
-  const presetKey = selectPresetKey(type, userRequest);
-  const preset = PRESETS[presetKey] || PRESETS.PRODUCTFOCUSED_food;
+  const variationIdx = variation ?? 0;
 
+  // 스타일 기반 variation: 1=3D, 2=2D는 전용 프리셋 사용
+  let presetKey: string;
+  if (variationIdx > 0 && variationIdx < STYLE_VARIATION_PRESETS.length && STYLE_VARIATION_PRESETS[variationIdx]) {
+    presetKey = STYLE_VARIATION_PRESETS[variationIdx];
+  } else {
+    const type = imageType || "PRODUCTFOCUSED";
+    presetKey = selectPresetKey(type, userRequest);
+  }
+
+  const preset = PRESETS[presetKey] || PRESETS.PRODUCTFOCUSED_food;
   let prompt = flattenPreset(preset, userRequest, copyContext, subjectOnly);
 
-  // variation별 구도/앵글 다양성
-  const variationIdx = variation ?? 0;
-  if (variationIdx > 0 && variationIdx < VARIATION_HINTS.length) {
-    prompt += VARIATION_HINTS[variationIdx];
+  // 스타일 variation 프리셋에서 브랜드 색상 플레이스홀더 교체
+  if (variationIdx > 0) {
+    const brandPrimary = externalBrand?.primaryColor || "soft blue";
+    const brandSecondary = externalBrand?.secondaryColor || "warm accent";
+    prompt = prompt.replace(/\{BRAND_PRIMARY\}/g, brandPrimary);
+    prompt = prompt.replace(/\{BRAND_SECONDARY\}/g, brandSecondary);
   }
 
   // 외부 브랜드 컨텍스트 — 내장 브랜드여도 서비스 설명은 항상 활용
   if (externalBrand) {
-    // 내장 브랜드가 아닌 경우에만 색상 힌트 추가 (내장 브랜드는 detectBrandColorHint에서 이미 처리)
-    if (!detectBrandName(userRequest)) {
+    // 실사(variation 0)이고 내장 브랜드가 아닌 경우에만 색상 힌트 추가
+    if (variationIdx === 0 && !detectBrandName(userRequest)) {
       const colorParts = [`Primary: ${externalBrand.primaryColor}`];
       if (externalBrand.secondaryColor) colorParts.push(`Secondary: ${externalBrand.secondaryColor}`);
       prompt += `\n\nBrand "${externalBrand.brandName}" key colors: ${colorParts.join(", ")}. Use these as subtle accent colors only (e.g. a small prop, lighting tint, or background tone). Do NOT make the entire image this color. Keep the palette natural and balanced. Do NOT render any logos, brand marks, or symbols in the image.`;

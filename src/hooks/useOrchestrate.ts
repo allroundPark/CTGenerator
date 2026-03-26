@@ -171,24 +171,36 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
         );
         foundImageUrl = results[0] || "";
       } else {
-        // 현재 이미지를 reference로 전달하여 수정
-        const currentImgUrl = pools.imagePool[pools.selImage]?.imageUrl;
+        // 수정 전용 모드: 현재 이미지 + 원본 프롬프트를 전달
+        const currentImg = pools.imagePool[pools.selImage];
+        const currentImgUrl = currentImg?.imageUrl;
         let refImgs: { data: string; mimeType: string }[] | undefined;
         if (currentImgUrl) {
           const imgData = await imageUrlToBase64(currentImgUrl);
           if (imgData) refImgs = [imgData];
         }
         const results = await generateParallelImages(
-          currentImgUrl ? `현재 이미지를 기반으로 수정해줘: ${text}` : prompt,
+          text,
           composite,
           brandCtx,
-          { count: 1, referenceImages: refImgs },
+          {
+            count: 1,
+            referenceImages: refImgs,
+            edit: true,
+            originalPrompt: currentImg?.generationPrompt,
+          },
           apiFetch,
         );
         foundImageUrl = results[0] || "";
       }
       if (foundImageUrl) {
-        pools.addImageToPool(foundImageUrl, composite.textColor, composite.bgTreatment);
+        // 수정된 이미지에 원본 메타데이터 유지
+        const currentImg = pools.imagePool[pools.selImage];
+        pools.addImageToPool(foundImageUrl, composite.textColor, composite.bgTreatment, {
+          generationPrompt: currentImg?.generationPrompt,
+          generationStyle: currentImg?.generationStyle,
+          generationVariation: currentImg?.generationVariation,
+        });
       }
       showStatus("이미지 추가 완료!");
       chat.addMessage({
@@ -279,9 +291,13 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
           { count: 3, enhance: true, referenceImages: attachedRefData },
           apiFetch,
         );
-        results.forEach((imgUrl) => {
+        results.forEach((imgUrl, i) => {
           if (imgUrl) {
-            pools.addImageToPool(imgUrl);
+            pools.addImageToPool(imgUrl, undefined, undefined, {
+              generationPrompt: text,
+              generationStyle: "realistic",
+              generationVariation: i,
+            });
             generatedCount++;
           }
         });
@@ -360,10 +376,15 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
         { count: 3, referenceImages: attachedRefData },
         apiFetch,
       );
+      const STYLE_MAP: Array<"realistic" | "3d" | "2d"> = ["realistic", "3d", "2d"];
       results.forEach((imgUrl, i) => {
         if (imgUrl) {
           const variant = newVariants[i] || newVariants[0];
-          pools.addImageToPool(imgUrl, variant.textColor, variant.bgTreatment);
+          pools.addImageToPool(imgUrl, variant.textColor, variant.bgTreatment, {
+            generationPrompt: text,
+            generationStyle: STYLE_MAP[i] || "realistic",
+            generationVariation: i,
+          });
           generatedCount++;
           if (i === 0) {
             logToSupabase({

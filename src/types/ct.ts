@@ -116,12 +116,18 @@ export interface SubOption {
   subLine2: string;
 }
 
+export type ImageStyle = "realistic" | "3d" | "2d";
+
 export interface ImageOption {
   imageUrl: string;
   textColor: "BK" | "WT";
   bgTreatment: BgTreatment;
   imageConstraint: ImageConstraint;
   imageType?: string;
+  // 생성 메타데이터 (수정 시 참조)
+  generationPrompt?: string;
+  generationStyle?: ImageStyle;
+  generationVariation?: number;
 }
 
 // 채팅 메시지

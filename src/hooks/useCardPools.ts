@@ -6,6 +6,7 @@ import {
   CopyOption,
   SubOption,
   ImageOption,
+  ImageStyle,
 } from "@/types/ct";
 
 const EMPTY_CONTENT: CTContent = {
@@ -115,6 +116,11 @@ export function useCardPools() {
       imageUrl: string,
       textColor?: "BK" | "WT",
       bgTreatment?: BgTreatment,
+      metadata?: {
+        generationPrompt?: string;
+        generationStyle?: ImageStyle;
+        generationVariation?: number;
+      },
     ) => {
       setImagePool((prev) => {
         const newIndex = prev.length;
@@ -129,6 +135,7 @@ export function useCardPools() {
               alignX: "center" as const,
               alignY: "center" as const,
             },
+            ...metadata,
           },
         ];
         // 첫 이미지일 때만 자동 선택
