@@ -7,7 +7,7 @@ import DeviceViewer from "@/components/DeviceViewer";
 import ReportModal from "@/components/ReportModal";
 import ApiKeySetup from "@/components/ApiKeySetup";
 import { exportCtPng, exportCtBase64 } from "@/lib/exportPng";
-import { loadKey, hasStoredKey, isWorkingGroup } from "@/lib/apiKey";
+import { loadKey, hasStoredKey, isWorkingGroup, clearKey } from "@/lib/apiKey";
 import { supabase } from "@/lib/supabase";
 import { getDeviceId } from "@/lib/deviceId";
 import { useOrchestrate } from "@/hooks/useOrchestrate";
@@ -56,6 +56,13 @@ export default function Home() {
   const [showReport, setShowReport] = useState(false);
   const [reportRating, setReportRating] = useState<"good" | "bad" | null>(null);
   const [editingField, setEditingField] = useState<{ field: CTTextField; value: string } | null>(null);
+
+  // ── API 키 변경 (로그아웃) ──
+  const handleLogout = useCallback(() => {
+    clearKey();
+    apiKeyRef.current = null;
+    setApiKeyReady(false);
+  }, []);
 
   // ── 바텀시트 ──
   const [sheetHeight, setSheetHeight] = useState(100);
@@ -240,7 +247,7 @@ export default function Home() {
 
   // ── 렌더링 ──
   if (apiKeyReady === null) {
-    return <div className="h-[100dvh] flex items-center justify-center bg-[#555]"><div className="w-4 h-4 border-2 border-gray-400 border-t-white rounded-full animate-spin" /></div>;
+    return <div className="h-[100dvh] flex items-center justify-center bg-ds-base"><div className="w-4 h-4 border-2 border-gray-400 border-t-white rounded-full animate-spin" /></div>;
   }
 
   if (!apiKeyReady) {
@@ -257,8 +264,21 @@ export default function Home() {
   }
 
   return (
-    <div className="h-[100dvh] flex items-center justify-center bg-[#555]">
-      <div className="w-full h-full sm:max-w-[430px] sm:max-h-[932px] flex flex-col bg-[#555] overflow-hidden sm:shadow-2xl sm:rounded-[2rem] sm:border sm:border-gray-700 relative">
+    <div className="h-[100dvh] flex items-center justify-center bg-ds-base">
+      <div className="w-full h-full sm:max-w-[430px] sm:max-h-[932px] flex flex-col bg-ds-base overflow-hidden sm:shadow-2xl sm:rounded-[2rem] sm:border sm:border-gray-700 relative">
+
+        {/* API 키 변경 버튼 */}
+        <button
+          onClick={handleLogout}
+          className="absolute top-3 left-3 z-20 w-8 h-8 rounded-full flex items-center justify-center bg-black/30 hover:bg-black/50 transition-colors"
+          title="API 키 변경"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+            <polyline points="10 17 15 12 10 7" />
+            <line x1="15" y1="12" x2="3" y2="12" />
+          </svg>
+        </button>
 
         {/* 메인: 디바이스 목업 */}
         <div
@@ -388,7 +408,7 @@ export default function Home() {
             borderRadius: "15px 15px 0 0",
             paddingBottom: "env(safe-area-inset-bottom)",
             transition: sheetSnapping ? "height 0.25s ease-out" : "none",
-            background: "linear-gradient(to bottom, #666 0%, #666 70%, #555 100%)",
+            background: "linear-gradient(to bottom, #242220 0%, #242220 70%, #1A1816 100%)",
           }}
         >
           {/* 드래그 핸들 */}
@@ -425,7 +445,7 @@ export default function Home() {
                   if (pool.length <= 1 && !isImageLoading) return null;
                   return (
                     <div key={label} className="flex items-center gap-1.5">
-                      <span className="text-[10px] text-gray-400 mr-0.5">{label}</span>
+                      <span className="text-[10px] text-ds-text-muted mr-0.5">{label}</span>
                       {isImageLoading ? (
                         <div className="w-3 h-3 border border-gray-400 border-t-white rounded-full animate-spin" />
                       ) : (
@@ -458,7 +478,7 @@ export default function Home() {
                   style={{
                     backgroundColor: orch.composite.textColor === "WT" ? "#fff" : "#1a1a1a",
                     borderColor: orch.composite.textColor === "WT" ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.2)",
-                    color: orch.composite.textColor === "WT" ? "#555" : "#fff",
+                    color: orch.composite.textColor === "WT" ? "#1A1816" : "#E8E2D9",
                   }}
                   title={`글자색: ${orch.composite.textColor === "WT" ? "흰색→검정" : "검정→흰색"}`}
                 >
@@ -481,7 +501,7 @@ export default function Home() {
 
           {/* 텍스트 수정 시트 */}
           {editingField && (
-            <div className="absolute inset-0 z-20 bg-[#666] px-4 pt-3 flex flex-col">
+            <div className="absolute inset-0 z-20 bg-ds-surface px-4 pt-3 flex flex-col">
               <EditSheet
                 field={editingField.field}
                 value={editingField.value}
@@ -493,7 +513,7 @@ export default function Home() {
 
           {/* 변주 입력 모드 */}
           {orch.variateInput && !editingField && (
-            <div className="absolute inset-0 z-20 bg-[#666] px-4 pt-3 flex flex-col">
+            <div className="absolute inset-0 z-20 bg-ds-surface px-4 pt-3 flex flex-col">
               <VariateInputSheet
                 field={orch.variateInput}
                 onSubmit={orch.handleVariateSubmit}
@@ -597,7 +617,7 @@ function VariateInputSheet({
         {hints[field]?.map((h) => (
           <button
             key={h} onClick={() => setText((prev) => prev ? `${prev}, ${h}` : h)}
-            className="text-[10px] text-gray-400 bg-gray-50 border border-gray-100 rounded-full px-2 py-0.5 hover:bg-blue-50 hover:text-blue-500 hover:border-blue-200 transition-colors"
+            className="text-[10px] text-ds-text-muted bg-gray-50 border border-gray-100 rounded-full px-2 py-0.5 hover:bg-blue-50 hover:text-blue-500 hover:border-blue-200 transition-colors"
           >
             {h}
           </button>
