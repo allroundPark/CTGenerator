@@ -120,11 +120,12 @@ export async function generateParallelImages(
   brandContext: BrandContext | null,
   opts: ImageGenOpts,
   apiFetch: ApiFetchFn,
+  errors?: string[],
 ): Promise<(string | null)[]> {
   const count = opts.count ?? 3;
 
   const promises = Array.from({ length: count }, (_, i) =>
-    generateSingleImage(prompt, variant, brandContext, i, opts, apiFetch),
+    generateSingleImage(prompt, variant, brandContext, i, opts, apiFetch, errors),
   );
 
   return Promise.all(promises);
@@ -137,6 +138,7 @@ async function generateSingleImage(
   variation: number,
   opts: ImageGenOpts,
   apiFetch: ApiFetchFn,
+  errors?: string[],
 ): Promise<string | null> {
   try {
     const res = await fetchWithTimeout(apiFetch, "/api/generate-image", {
@@ -158,10 +160,17 @@ async function generateSingleImage(
         ...(opts.originalPrompt ? { originalPrompt: opts.originalPrompt } : {}),
       }),
     }, 60000);
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({ error: res.statusText }));
+      const errMsg = `${res.status}: ${errBody.error || res.statusText}`;
+      errors?.push(errMsg);
+      return null;
+    }
     const data = await res.json();
     return data.image ? `data:${data.image.mimeType};base64,${data.image.data}` : null;
-  } catch {
+  } catch (e) {
+    const errMsg = e instanceof Error ? e.message : "알 수 없는 오류";
+    errors?.push(errMsg);
     return null;
   }
 }

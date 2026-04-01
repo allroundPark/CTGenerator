@@ -85,6 +85,7 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
     attachedImg: AttachedImage,
     variant: CTContent,
     mode: "reference" | "edit",
+    errors?: string[],
   ): Promise<string | null> {
     try {
       const base64 = await fileToBase64(attachedImg.file);
@@ -106,12 +107,18 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
           },
         }),
       });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({ error: res.statusText }));
+        errors?.push(`${res.status}: ${errBody.error || res.statusText}`);
+        return null;
+      }
       const data = await res.json();
       return data.image
         ? `data:${data.image.mimeType};base64,${data.image.data}`
         : null;
-    } catch {
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : "알 수 없는 오류";
+      errors?.push(errMsg);
       return null;
     }
   }
@@ -154,10 +161,11 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
       showStatus("이미지 수정 중...");
       const prompt = text || `${composite.label} ${composite.titleLine1} ${composite.titleLine2}`;
       let foundImageUrl = "";
+      const imgErrors: string[] = [];
       if (refImages.length > 0) {
-        foundImageUrl = (await generateImage(text, refImages[0], composite, "reference")) || "";
+        foundImageUrl = (await generateImage(text, refImages[0], composite, "reference", imgErrors)) || "";
       } else if (editImages.length > 0) {
-        foundImageUrl = (await generateImage(text, editImages[0], composite, "edit")) || "";
+        foundImageUrl = (await generateImage(text, editImages[0], composite, "edit", imgErrors)) || "";
       } else if (applyImages.length > 0) {
         showStatus("첨부 이미지 보정 중...");
         const b64 = await fileToBase64(applyImages[0].file);
@@ -168,6 +176,7 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
           brandCtx,
           { count: 1, enhance: true, referenceImages: [applyImageData] },
           apiFetch,
+          imgErrors,
         );
         foundImageUrl = results[0] || "";
       } else {
@@ -190,6 +199,7 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
             originalPrompt: currentImg?.generationPrompt,
           },
           apiFetch,
+          imgErrors,
         );
         foundImageUrl = results[0] || "";
       }
@@ -202,12 +212,13 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
           generationVariation: currentImg?.generationVariation,
         });
       }
-      showStatus("이미지 추가 완료!");
+      showStatus(foundImageUrl ? "이미지 추가 완료!" : "");
+      const failDetail = imgErrors.length > 0 ? ` (${imgErrors[0]})` : "";
       chat.addMessage({
         role: "assistant",
         content: foundImageUrl
           ? "이미지를 수정했어요! 스와이프해서 비교해보세요."
-          : "이미지 수정에 실패했어요.",
+          : `이미지 수정에 실패했어요.${failDetail}`,
       });
       return intent;
     }
@@ -279,6 +290,7 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
     // 바로적용 이미지 병렬 시작
     let imagePromise: Promise<void> | null = null;
     let generatedCount = 0;
+    const imgErrors: string[] = [];
 
     if (applyImageData) {
       const attachedRefData = [applyImageData];
@@ -290,6 +302,7 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
           null,
           { count: 3, enhance: true, referenceImages: attachedRefData },
           apiFetch,
+          imgErrors,
         );
         results.forEach((imgUrl, i) => {
           if (imgUrl) {
@@ -352,10 +365,11 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
     // 이미지
     if (imagePromise) {
       await imagePromise;
+      const enhanceFailDetail = generatedCount === 0 && imgErrors.length > 0 ? ` (${imgErrors[0]})` : "";
       showStatus(
         generatedCount > 0
           ? `이미지 ${generatedCount}장 보정 완료! 각 영역을 넘기면서 조합해보세요.`
-          : "문구는 완성! 이미지 보정에 실패했어요. 다시 시도해보세요.",
+          : `문구는 완성! 이미지 보정에 실패했어요.${enhanceFailDetail}`,
       );
     } else {
       let attachedRefData: { data: string; mimeType: string }[] | undefined;
@@ -375,6 +389,7 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
         activeBrandCtx,
         { count: 3, referenceImages: attachedRefData },
         apiFetch,
+        imgErrors,
       );
       const STYLE_MAP: Array<"realistic" | "3d" | "2d"> = ["realistic", "3d", "2d"];
       results.forEach((imgUrl, i) => {
@@ -397,10 +412,11 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
         }
       });
 
+      const failDetail = generatedCount === 0 && imgErrors.length > 0 ? ` (${imgErrors[0]})` : "";
       showStatus(
         generatedCount > 0
           ? `이미지 ${generatedCount}장 생성 완료! 각 영역을 넘기면서 조합해보세요.`
-          : "문구는 완성! 이미지를 첨부하거나 생성 요청해보세요.",
+          : `문구는 완성! 이미지 생성에 실패했어요.${failDetail}`,
       );
     }
 

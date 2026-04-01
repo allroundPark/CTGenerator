@@ -92,7 +92,7 @@ export default function ChatInput({
   };
 
   const clearAllImages = () => {
-    images.forEach((img) => URL.revokeObjectURL(img.previewUrl));
+    // blob URL은 revoke하지 않음 — 채팅 메시지의 imageUrls에서 계속 참조됨
     setImages([]);
     setShowOptions(null);
     if (fileInputRef.current) fileInputRef.current.value = "";

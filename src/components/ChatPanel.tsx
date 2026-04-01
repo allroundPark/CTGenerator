@@ -252,7 +252,7 @@ export default function ChatPanel({ messages, onSend, isLoading, genStatus, onVi
 
       {/* 하단 페이드 + 입력바 — 항상 바텀시트 하단 고정 */}
       <div className="shrink-0 relative">
-        <div className="px-4 pb-12 pt-1">
+        <div className="px-4 pb-4 pt-1">
           <ChatInput onSubmit={onSend} disabled={isLoading} placeholder={placeholder} autoFocus highlightAttach={highlightAttach} onFocusChange={onInputFocusChange} hasContent={hasContent} />
         </div>
       </div>
