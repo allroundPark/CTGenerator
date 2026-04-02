@@ -39,6 +39,9 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
   const [variatingField, setVariatingField] = useState<"copy" | "sub" | "image" | null>(null);
   const [variateInput, setVariateInput] = useState<"copy" | "sub" | "image" | null>(null);
 
+  // 옵션 선택 시 원본 이미지 복원용
+  const lastAttachedImagesRef = useRef<AttachedImage[] | null>(null);
+
   const showStatus = (msg: string) => setStatusMessage(msg);
 
   // ── 로그 ──
@@ -275,6 +278,71 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
     const editImages = attachedImages?.filter((i) => i.option === "edit") || [];
     const refImages = attachedImages?.filter((i) => i.option === "reference") || [];
 
+    // 이미지+텍스트 동시 첨부 시: extract-spec으로 의도 파악 → edit/enhance 분기
+    const hasAttachedImages = applyImages.length > 0 || editImages.length > 0 || refImages.length > 0;
+    if (hasAttachedImages && text) {
+      showStatus("요청 분석 중...");
+      const extracted = await extractSpec(text, contentSpec, apiFetch);
+      if (Object.keys(extracted).length > 0) {
+        setContentSpec((prev) => ({ ...prev, ...extracted }));
+      }
+      // 이미지 수정 의도가 있으면 (imageStyle 변경, 또는 이미지 관련 키워드)
+      const isImageEdit = !!extracted.imageStyle ||
+        /바꿔|변경|수정|톤|밝게|어둡게|색감|분위기|초록|파란|빨간|노란|보라|핑크/.test(text);
+      if (isImageEdit) {
+        // 이미지 수정 + 문구 생성 병렬 진행
+        showStatus("이미지 수정 & 문구 생성 중...");
+        const imgErrors: string[] = [];
+        const targetImg = applyImages[0] || editImages[0];
+        const b64 = await fileToBase64(targetImg.file);
+        const refData = [{ data: b64, mimeType: targetImg.file.type || "image/jpeg" }];
+
+        // 이미지 수정과 문구 생성을 병렬로
+        const editPromise = generateParallelImages(
+          text,
+          { imageType: "" } as CTContent,
+          brandCtx,
+          { count: 1, edit: true, referenceImages: refData },
+          apiFetch,
+          imgErrors,
+        );
+
+        // 브랜드 검색 + 문구 생성
+        const specForText = { ...contentSpec, ...extracted };
+        const knownBrand = getKnownBrandContext(specForText.brand || text);
+        const brandSearchResult = knownBrand ? null : await searchBrand(specForText.brand || text, apiFetch);
+        const activeBrandCtx: BrandContext | null = knownBrand
+          ? ({ ...knownBrand, mascotName: null, mascotDescription: null, mascotImage: null } as BrandContext)
+          : brandSearchResult;
+        if (activeBrandCtx) setBrandCtx(activeBrandCtx);
+
+        const textPrompt = [specForText.brand, specForText.content].filter(Boolean).join(" ") || text;
+        const newVariants = await generateText(textPrompt, activeBrandCtx, apiFetch);
+        pools.appendToPool(newVariants);
+
+        // 이미지 수정 결과 대기
+        const editResults = await editPromise;
+        if (editResults[0]) {
+          const variant = newVariants[0];
+          pools.addImageToPool(editResults[0], variant?.textColor, variant?.bgTreatment, {
+            generationPrompt: text,
+            generationStyle: "realistic",
+            generationVariation: 0,
+          });
+        }
+
+        const failDetail = !editResults[0] && imgErrors.length > 0 ? ` (${imgErrors[0]})` : "";
+        chat.addMessage({
+          role: "assistant",
+          content: editResults[0]
+            ? "완성! 이상한 거 있으면 추가 요청해주세요."
+            : `문구는 완성! 이미지 수정에 실패했어요.${failDetail}`,
+          showReport: !!editResults[0],
+        });
+        return;
+      }
+    }
+
     let applyImageData: { data: string; mimeType: string } | null = null;
     if (applyImages.length > 0) {
       const b64 = await fileToBase64(applyImages[0].file);
@@ -335,8 +403,13 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
       showStatus("문구 생성 중...");
     }
 
-    // 문구 생성
-    const newVariants = await generateText(text, activeBrandCtx, apiFetch);
+    // 문구 생성 — 이미지만 첨부된 경우 이미지 분석 결과를 프롬프트에 추가
+    let textPrompt = text;
+    if (applyImageData && (!contentSpec.brand && !contentSpec.content)) {
+      // 이미지만 있고 brand/content 없으면 → 이미지 기반으로 문구 유추
+      textPrompt = `첨부된 이미지를 분석해서 이 이미지에 어울리는 카드 문구를 만들어줘. 이미지의 분위기, 색감, 주제를 파악해서 적절한 브랜드/혜택 문구를 생성해줘. 유저 요청: ${text}`;
+    }
+    const newVariants = await generateText(textPrompt, activeBrandCtx, apiFetch);
     pools.appendToPool(newVariants);
 
     logToSupabase({
@@ -517,48 +590,26 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
     // 이미 카드 있으면 수정 모드
     const hasImages = !!(images && images.length > 0);
     if (pools.hasContent) {
-      await handleSend(text, images);
+      // 이미지가 없지만 lastAttachedImages가 있으면 복원 (옵션 선택 후)
+      const effectiveImages = images || lastAttachedImagesRef.current || undefined;
+      if (effectiveImages) lastAttachedImagesRef.current = null;
+      await handleSend(text, effectiveImages);
       return;
     }
 
-    // 이미지 첨부 + 처리 방식 미명시 → 질문
-    const imageProcessKeywords = [
-      "보정",
-      "조합",
-      "합성",
-      "합쳐",
-      "섞어",
-      "바로 적용",
-      "그대로",
-    ];
-    const hasImageIntent = imageProcessKeywords.some((kw) => text.includes(kw));
-    if (hasImages && !hasImageIntent) {
-      setHighlightAttach(false);
-      chat.addMessage({
-        role: "assistant",
-        content: "이미지를 어떻게 활용할까요?",
-        type: "options",
-        options: [
-          {
-            label: "그대로 사용",
-            value: "이 이미지를 그대로 카드 배경으로 사용해줘",
-          },
-          {
-            label: "AI 보정",
-            value: "이 이미지를 AI로 보정해서 카드 만들어줘",
-          },
-          {
-            label: "스타일 변형",
-            value: "이 이미지 스타일을 참고해서 새로 만들어줘",
-          },
-        ],
-      });
-      return;
-    }
-
-    // 이미지 첨부 + 의도 명확 → 바로 생성
+    // 이미지 첨부 시: 텍스트가 있으면 LLM 의도 판별, 없으면 질문
     if (hasImages) {
-      await handleSend(text, images);
+      // 이미지 첨부 시: 텍스트 유무와 관계없이 바로 생성
+      // 텍스트 없으면 handleFirstGeneration에서 이미지 분석으로 문구 유추
+      await handleSend(text || "이 이미지로 카드 만들어줘", images);
+      return;
+    }
+
+    // 옵션 선택 후 이미지 복원 (lastAttachedImages가 있으면 이전 이미지 첨부 질문의 응답)
+    if (lastAttachedImagesRef.current) {
+      const savedImages = lastAttachedImagesRef.current;
+      lastAttachedImagesRef.current = null;
+      await handleSend(text, savedImages);
       return;
     }
 

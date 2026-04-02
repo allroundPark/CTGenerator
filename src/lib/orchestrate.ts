@@ -159,7 +159,7 @@ async function generateSingleImage(
         ...(opts.edit ? { edit: true } : {}),
         ...(opts.originalPrompt ? { originalPrompt: opts.originalPrompt } : {}),
       }),
-    }, 60000);
+    }, 180000);
     if (!res.ok) {
       const errBody = await res.json().catch(() => ({ error: res.statusText }));
       const errMsg = `${res.status}: ${errBody.error || res.statusText}`;

@@ -4,11 +4,10 @@ import { buildImagePrompt, detectBrandName } from "@/lib/imagePrompt";
 import { promises as fs } from "fs";
 import path from "path";
 
-// 이미지 생성 모델 (최신 순)
+// 이미지 생성 모델 (고품질 → 폴백)
 const IMAGE_MODELS = [
-  "gemini-2.5-flash-image",
-  "gemini-3.1-flash-image-preview",
   "gemini-3-pro-image-preview",
+  "gemini-2.5-flash-image",
 ];
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -101,6 +100,22 @@ JSON으로만 응답: {"needsLogo": true} 또는 {"needsLogo": false}` }] }],
   }
 }
 
+/** 서버→Gemini fetch에 타임아웃 + 클라이언트 abort 전파 */
+function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  clientSignal?: AbortSignal | null,
+  timeoutMs = 180000,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  // 클라이언트가 끊으면 Gemini 요청도 즉시 abort
+  if (clientSignal) {
+    clientSignal.addEventListener("abort", () => controller.abort(), { once: true });
+  }
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
 export async function POST(req: NextRequest) {
   const apiKey = getApiKey(req);
   if (!apiKey) {
@@ -114,6 +129,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "prompt is required" }, { status: 400 });
   }
 
+  // 클라이언트 disconnect 시 Gemini 요청도 abort하기 위한 signal
+  const clientSignal = req.signal;
+
   let fullPrompt: string;
   let useSubjectPipeline = false; // 2단계 파이프라인 (주제부 생성 → 상단 확장)
 
@@ -125,14 +143,20 @@ ATTACHED: The current card background image that must be preserved as the base.
 USER REQUEST: "${prompt}"
 ${originalPrompt ? `\nORIGINAL GENERATION CONTEXT: This image was originally generated for "${originalPrompt}". Maintain the same theme and subject while applying the user's edit request.` : ""}
 
-RULES:
+QUALITY REQUIREMENTS (CRITICAL):
+- Output resolution: 1005×1044px (3x of 335×348). Every pixel matters.
+- ZERO pixel artifacts: no jagged edges, no compression noise, no blurring, no aliasing
+- ZERO cropping: the ENTIRE content of the original image must be preserved. Do NOT cut off any edges, corners, or subjects. If the aspect ratio needs adjustment, ADD content (outpaint) rather than removing it.
+- Crisp, sharp details throughout — the image must look pristine at 3x pixel density
+- Clean upscaling: if the source is low-res, intelligently enhance detail rather than producing a blurry enlargement
+
+COMPOSITION RULES:
 - PRESERVE the overall composition, subject placement, and layout of the attached image
-- ONLY modify what the user specifically requested (e.g. brightness, color tone, style adjustment)
-- Maintain the same 1:1 square aspect ratio
+- ONLY modify what the user specifically requested (e.g. brightness, color tone, style adjustment, mood change)
+- Maintain 1:1 square aspect ratio
 - Keep the text-safe zone (top ~35%) with low contrast for text overlay
-- Do NOT regenerate from scratch — this is an EDIT of the existing image
-- The result should look like the same image with targeted modifications, not a completely new image
-- Maximum sharpness and detail — output will be displayed at 3x resolution (1005×1044px)`;
+- Do NOT regenerate from scratch — this is an EDIT, not a new generation
+- The result should look like the same image with targeted modifications`;
     console.log(`[image-gen] edit mode, prompt length=${fullPrompt.length}`);
   } else if (enhance) {
     // 첨부 이미지 보정 모드 — 프리셋 없이 보정 전용 프롬프트
@@ -243,7 +267,7 @@ User context: ${prompt}`;
     console.log(`[image-gen] Step1 시도: ${model} (${step1AspectRatio})`);
 
     try {
-      const geminiRes = await fetch(url, {
+      const geminiRes = await fetchWithTimeout(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -256,7 +280,7 @@ User context: ${prompt}`;
             },
           },
         }),
-      });
+      }, clientSignal, 180000);
 
       if (!geminiRes.ok) {
         const errText = await geminiRes.text();
@@ -334,7 +358,7 @@ RULES:
     console.log(`[image-gen] Step2 상단확장 시도: ${model}`);
 
     try {
-      const geminiRes = await fetch(url, {
+      const geminiRes = await fetchWithTimeout(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -352,7 +376,7 @@ RULES:
             },
           },
         }),
-      });
+      }, clientSignal, 180000);
 
       if (!geminiRes.ok) {
         const errText = await geminiRes.text();

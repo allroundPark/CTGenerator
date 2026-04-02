@@ -128,6 +128,7 @@ function ThumbsButtons({ msgId, onQuickRate, onReport }: {
 
 export default function ChatPanel({ messages, onSend, isLoading, genStatus, onViewCanvas, onReport, onQuickRate, onInputFocusChange, placeholder, collapsed, highlightAttach, hasContent }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -138,7 +139,7 @@ export default function ChatPanel({ messages, onSend, isLoading, genStatus, onVi
   if (collapsed) {
     return (
       <div className="flex flex-col justify-start px-4 pt-1 h-full">
-        <ChatInput onSubmit={onSend} disabled={isLoading} placeholder={placeholder} autoFocus={false} highlightAttach={highlightAttach} onFocusChange={onInputFocusChange} hasContent={hasContent} />
+        <ChatInput onSubmit={onSend} disabled={isLoading} placeholder={placeholder} images={attachedImages} onImagesChange={setAttachedImages} autoFocus={false} highlightAttach={highlightAttach} onFocusChange={onInputFocusChange} hasContent={hasContent} />
       </div>
     );
   }
@@ -154,7 +155,7 @@ export default function ChatPanel({ messages, onSend, isLoading, genStatus, onVi
             브랜드와 소재를 알려주세요.{"\n"}
             예: &apos;현대카드 여행 혜택 콘텐츠 만들어줘&apos;
           </p>
-          <ChatInput onSubmit={onSend} disabled={isLoading} placeholder={placeholder} autoFocus highlightAttach={highlightAttach} onFocusChange={onInputFocusChange} hasContent={hasContent} />
+          <ChatInput onSubmit={onSend} disabled={isLoading} placeholder={placeholder} images={attachedImages} onImagesChange={setAttachedImages} autoFocus highlightAttach={highlightAttach} onFocusChange={onInputFocusChange} hasContent={hasContent} />
         </div>
       ) : (
         <>
@@ -253,7 +254,7 @@ export default function ChatPanel({ messages, onSend, isLoading, genStatus, onVi
       {/* 하단 페이드 + 입력바 — 항상 바텀시트 하단 고정 */}
       <div className="shrink-0 relative">
         <div className="px-4 pb-4 pt-1">
-          <ChatInput onSubmit={onSend} disabled={isLoading} placeholder={placeholder} autoFocus highlightAttach={highlightAttach} onFocusChange={onInputFocusChange} hasContent={hasContent} />
+          <ChatInput onSubmit={onSend} disabled={isLoading} placeholder={placeholder} images={attachedImages} onImagesChange={setAttachedImages} autoFocus highlightAttach={highlightAttach} onFocusChange={onInputFocusChange} hasContent={hasContent} />
         </div>
       </div>
         </>

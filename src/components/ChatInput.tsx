@@ -12,6 +12,9 @@ interface ChatInputProps {
   highlightAttach?: boolean;
   onFocusChange?: (focused: boolean) => void;
   hasContent?: boolean;
+  // 부모에서 관리하는 images state (바텀시트 전환 시 유지용)
+  images?: AttachedImage[];
+  onImagesChange?: (images: AttachedImage[]) => void;
 }
 
 const OPTION_LABELS: Record<ImageAttachOption, { label: string; desc: string }> = {
@@ -29,10 +32,16 @@ export default function ChatInput({
   highlightAttach = false,
   onFocusChange,
   hasContent = false,
+  images: externalImages,
+  onImagesChange,
 }: ChatInputProps) {
   const [value, setValue] = useState("");
-  const [images, setImages] = useState<AttachedImage[]>([]);
-  const [showOptions, setShowOptions] = useState<number | null>(null); // 옵션 표시할 이미지 인덱스
+  const [internalImages, setInternalImages] = useState<AttachedImage[]>([]);
+  const [showOptions, setShowOptions] = useState<number | null>(null);
+
+  // 부모가 images/onImagesChange를 주면 부모 state 사용, 아니면 로컬 state
+  const images = externalImages ?? internalImages;
+  const setImages = onImagesChange ?? setInternalImages;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -73,21 +82,18 @@ export default function ChatInput({
       previewUrl: URL.createObjectURL(file),
       option: "apply" as ImageAttachOption, // 기본: 바로 적용
     }));
-    setImages((prev) => [...prev, ...newImages]);
+    setImages([...images, ...newImages]);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const removeImage = (index: number) => {
-    setImages((prev) => {
-      const removed = prev[index];
-      URL.revokeObjectURL(removed.previewUrl);
-      return prev.filter((_, i) => i !== index);
-    });
+    URL.revokeObjectURL(images[index].previewUrl);
+    setImages(images.filter((_, i) => i !== index));
     if (showOptions === index) setShowOptions(null);
   };
 
   const updateOption = (index: number, option: ImageAttachOption) => {
-    setImages((prev) => prev.map((img, i) => (i === index ? { ...img, option } : img)));
+    setImages(images.map((img, i) => (i === index ? { ...img, option } : img)));
     setShowOptions(null);
   };
 
