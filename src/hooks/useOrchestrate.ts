@@ -331,16 +331,26 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
         /바꿔|변경|수정|톤|밝게|어둡게|색감|분위기|초록|파란|빨간|노란|보라|핑크/.test(text);
       console.log(`[handleFirstGeneration] isImageEdit=${isImageEdit}, action=${action}, imageStyle=${extracted.imageStyle}`);
       if (isImageEdit) {
-        // 이미지 수정 + 문구 생성 병렬 진행 (에러 내부 처리, 재시도 방지)
+        // 이미지에서 텍스트 추출 + 이미지 수정 (에러 내부 처리, 재시도 방지)
         try {
-          showStatus("이미지 수정 & 문구 생성 중...");
+          showStatus("이미지 분석 & 수정 중...");
           const imgErrors: string[] = [];
           const targetImg = applyImages[0] || editImages[0];
-          // 리사이즈해서 전송 (833kb→~100kb, Gemini 처리 시간 대폭 절감)
           const resized = await fileToResizedBase64(targetImg.file, 1024);
           const refData = [resized];
 
-          // 이미지 수정 3안 + 문구 생성을 병렬로
+          // 1) 이미지에서 텍스트 추출 (OCR) — 문구로 사용
+          const ocrPromise = apiFetch("/api/extract-text-from-image", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ image: resized }),
+          }).then(async (res) => {
+            if (!res.ok) return null;
+            const data = await res.json();
+            return data.extracted || null;
+          }).catch(() => null);
+
+          // 2) 이미지 수정 3안 생성 (텍스트 제거 + 유저 요청 반영)
           const editPromise = generateParallelImages(
             text,
             { imageType: "" } as CTContent,
@@ -350,18 +360,41 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
             imgErrors,
           );
 
-          // 브랜드 검색 + 문구 생성
-          const specForText = { ...contentSpec, ...extracted };
-          const knownBrand = getKnownBrandContext(specForText.brand || text);
-          const brandSearchResult = knownBrand ? null : await searchBrand(specForText.brand || text, apiFetch);
-          const activeBrandCtx: BrandContext | null = knownBrand
-            ? ({ ...knownBrand, mascotName: null, mascotDescription: null, mascotImage: null } as BrandContext)
-            : brandSearchResult;
-          if (activeBrandCtx) setBrandCtx(activeBrandCtx);
+          // OCR 결과 대기 → 원본 문구 + 변형 문구 생성
+          const ocrResult = await ocrPromise;
+          if (ocrResult?.label || ocrResult?.titleLine1) {
+            // 1안: 이미지에서 추출한 원본 텍스트
+            const ocrVariant: CTContent = {
+              id: crypto.randomUUID(),
+              label: ocrResult.label || "",
+              titleLine1: ocrResult.titleLine1 || "",
+              titleLine2: ocrResult.titleLine2 || "",
+              subLine1: ocrResult.subLine1 || "",
+              subLine2: ocrResult.subLine2 || "",
+              textColor: "WT",
+              imageType: "",
+              bgTreatment: { type: "none" },
+              imageConstraint: { fit: "cover", alignX: "center", alignY: "center" },
+            };
 
-          const textPrompt = [specForText.brand, specForText.content].filter(Boolean).join(" ") || text;
-          const newVariants = await generateText(textPrompt, activeBrandCtx, apiFetch);
-          pools.appendToPool(newVariants);
+            // 2~3안: OCR 텍스트 기반 변형 문구 생성
+            const ocrContext = `${ocrResult.label || ""} ${ocrResult.titleLine1 || ""} ${ocrResult.titleLine2 || ""}`.trim();
+            const variantPromise = generateText(ocrContext, null, apiFetch).catch(() => []);
+
+            pools.appendToPool([ocrVariant]);
+
+            // 변형 문구 추가 (병렬로 기다림)
+            const variants = await variantPromise;
+            if (variants.length > 0) {
+              pools.appendToPool(variants);
+            }
+          } else {
+            // OCR 실패 시 기존 방식으로 문구 생성
+            const specForText = { ...contentSpec, ...extracted };
+            const textPrompt = [specForText.brand, specForText.content].filter(Boolean).join(" ") || text;
+            const newVariants = await generateText(textPrompt, null, apiFetch);
+            pools.appendToPool(newVariants);
+          }
 
           // 이미지 수정 3안 결과 대기
           const editResults = await editPromise;
