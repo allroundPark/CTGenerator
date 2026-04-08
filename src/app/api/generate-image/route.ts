@@ -147,18 +147,20 @@ export async function POST(req: NextRequest) {
   let useSubjectPipeline = false; // 2단계 파이프라인 (주제부 생성 → 상단 확장)
 
   if (edit) {
-    // 수정 전용 모드 — 심플하지만 핵심 규칙 포함
     fullPrompt = `Edit this image: "${prompt}"
 ${originalPrompt ? `Original context: "${originalPrompt}"` : ""}
 
+CRITICAL: The input image may be a screenshot of a card with UI frame. You MUST:
+- REMOVE all card borders, rounded corners, padding, gray edges, and card frame
+- REMOVE all text overlays, labels, titles, icons, hearts, UI elements
+- Extract ONLY the core visual content (photo/illustration) and edit that
+- Fill removed areas (borders, text, UI) with natural background continuation
+
 Rules:
-- Apply ONLY the requested change (color, tone, style, brightness, etc.)
-- Keep the subject and composition intact
-- The image may be a screenshot of a card UI. If so, IGNORE all UI elements (text overlays, labels, titles, icons, hearts, navigation bars, buttons). Focus ONLY on the background image content and apply edits to that.
-- Remove any text, UI overlays, or watermarks. Inpaint those areas with natural background continuation.
-- Output: 1:1 square, maximum sharpness (3x density, 1005×1044px)
-- No cropping. If aspect ratio needs adjustment, outpaint (add content) rather than crop.
-- Top ~35% should remain low-contrast for text overlay zone`;
+- Apply the requested change (color, tone, style, etc.) to the core visual content
+- Output must be edge-to-edge with NO borders, NO rounded corners, NO padding
+- Output: 1:1 square, maximum sharpness (1005×1044px)
+- Top ~35% should be low-contrast for text overlay zone`;
     console.log(`[image-gen] edit mode, prompt length=${fullPrompt.length}`);
   } else if (enhance) {
     // 첨부 이미지 보정 모드 — 프리셋 없이 보정 전용 프롬프트

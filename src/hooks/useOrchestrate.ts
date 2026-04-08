@@ -491,13 +491,47 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
       showStatus("문구 생성 중...");
     }
 
-    // 문구 생성 — 이미지만 첨부된 경우 이미지 분석 결과를 프롬프트에 추가
-    let textPrompt = text;
-    if (applyImageData && (!contentSpec.brand && !contentSpec.content)) {
-      // 이미지만 있고 brand/content 없으면 → 이미지 기반으로 문구 유추
-      textPrompt = `첨부된 이미지를 분석해서 이 이미지에 어울리는 카드 문구를 만들어줘. 이미지의 분위기, 색감, 주제를 파악해서 적절한 브랜드/혜택 문구를 생성해줘. 유저 요청: ${text}`;
+    // 문구 생성 — 이미지 첨부 시 OCR로 텍스트 추출 시도
+    let newVariants: CTContent[] = [];
+    if (applyImageData) {
+      let ocrResult = null;
+      try {
+        const ocrRes = await apiFetch("/api/extract-text-from-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: applyImageData }),
+        });
+        if (ocrRes.ok) {
+          const ocrData = await ocrRes.json();
+          ocrResult = ocrData.extracted;
+        }
+      } catch { /* OCR 실패 시 무시 */ }
+
+      if (ocrResult?.label || ocrResult?.titleLine1) {
+        // OCR 성공: 원본 문구 1안 + 변형 2~3안
+        const ocrVariant: CTContent = {
+          id: crypto.randomUUID(),
+          label: ocrResult.label || "",
+          titleLine1: ocrResult.titleLine1 || "",
+          titleLine2: ocrResult.titleLine2 || "",
+          subLine1: ocrResult.subLine1 || "",
+          subLine2: ocrResult.subLine2 || "",
+          textColor: "WT",
+          imageType: "",
+          bgTreatment: { type: "none" },
+          imageConstraint: { fit: "cover", alignX: "center", alignY: "center" },
+        };
+        const ocrContext = `${ocrResult.label || ""} ${ocrResult.titleLine1 || ""} ${ocrResult.titleLine2 || ""}`.trim();
+        const variants = await generateText(ocrContext, activeBrandCtx, apiFetch).catch(() => []);
+        newVariants = [ocrVariant, ...variants];
+      } else {
+        // OCR 실패: 이미지 분석 기반 문구 생성
+        const textPrompt = `첨부된 이미지를 분석해서 이 이미지에 어울리는 카드 문구를 만들어줘. 유저 요청: ${text}`;
+        newVariants = await generateText(textPrompt, activeBrandCtx, apiFetch);
+      }
+    } else {
+      newVariants = await generateText(text, activeBrandCtx, apiFetch);
     }
-    const newVariants = await generateText(textPrompt, activeBrandCtx, apiFetch);
     pools.appendToPool(newVariants);
 
     logToSupabase({
