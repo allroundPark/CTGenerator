@@ -150,17 +150,24 @@ export async function POST(req: NextRequest) {
     fullPrompt = `Edit this image: "${prompt}"
 ${originalPrompt ? `Original context: "${originalPrompt}"` : ""}
 
-CRITICAL: The input image may be a screenshot of a card with UI frame. You MUST:
-- REMOVE all card borders, rounded corners, padding, gray edges, and card frame
-- REMOVE all text overlays, labels, titles, icons, hearts, UI elements
-- Extract ONLY the core visual content (photo/illustration) and edit that
-- Fill removed areas (borders, text, UI) with natural background continuation
+CRITICAL — UI CLEANUP:
+- If the image has card borders, rounded corners, padding, or gray edges: REMOVE them completely
+- If the image has text overlays, labels, icons, hearts, UI elements: REMOVE them
+- Fill removed areas with natural background continuation
+- Output must be edge-to-edge, NO borders, NO padding
 
-Rules:
-- Apply the requested change (color, tone, style, etc.) to the core visual content
-- Output must be edge-to-edge with NO borders, NO rounded corners, NO padding
-- Output: 1:1 square, maximum sharpness (1005×1044px)
-- Top ~35% should be low-contrast for text overlay zone`;
+PRESERVE (do NOT change these):
+- Brand logos, CI marks, and brand-specific colors — these are intentional design elements
+- The overall color harmony and balance of the original image
+- The relative color relationships between elements (if background is cool-toned, keep it cool)
+
+COLOR EDITING RULES:
+- When changing color tone, apply it as a subtle shift, not a heavy filter
+- Maintain contrast ratios and readability
+- Keep whites white, keep blacks black — shift mid-tones only
+- If the original has a specific color palette (e.g. brand colors), preserve the palette's harmony while applying the requested change
+
+Output: 1:1 square, maximum sharpness (1005×1044px), top ~35% low-contrast for text zone`;
     console.log(`[image-gen] edit mode, prompt length=${fullPrompt.length}`);
   } else if (enhance) {
     // 첨부 이미지 보정 모드 — 프리셋 없이 보정 전용 프롬프트
