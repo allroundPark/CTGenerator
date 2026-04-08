@@ -362,8 +362,8 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
 
           // OCR 결과 대기 → 원본 문구 + 변형 문구 생성
           const ocrResult = await ocrPromise;
+          let editVariants: CTContent[] = [];
           if (ocrResult?.label || ocrResult?.titleLine1) {
-            // 1안: 이미지에서 추출한 원본 텍스트
             const ocrVariant: CTContent = {
               id: crypto.randomUUID(),
               label: ocrResult.label || "",
@@ -376,32 +376,22 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
               bgTreatment: { type: "none" },
               imageConstraint: { fit: "cover", alignX: "center", alignY: "center" },
             };
-
-            // 2~3안: OCR 텍스트 기반 변형 문구 생성
             const ocrContext = `${ocrResult.label || ""} ${ocrResult.titleLine1 || ""} ${ocrResult.titleLine2 || ""}`.trim();
-            const variantPromise = generateText(ocrContext, null, apiFetch).catch(() => []);
-
-            pools.appendToPool([ocrVariant]);
-
-            // 변형 문구 추가 (병렬로 기다림)
-            const variants = await variantPromise;
-            if (variants.length > 0) {
-              pools.appendToPool(variants);
-            }
+            const variants = await generateText(ocrContext, null, apiFetch).catch(() => []);
+            editVariants = [ocrVariant, ...variants];
           } else {
-            // OCR 실패 시 기존 방식으로 문구 생성
             const specForText = { ...contentSpec, ...extracted };
             const textPrompt = [specForText.brand, specForText.content].filter(Boolean).join(" ") || text;
-            const newVariants = await generateText(textPrompt, null, apiFetch);
-            pools.appendToPool(newVariants);
+            editVariants = await generateText(textPrompt, null, apiFetch);
           }
+          pools.appendToPool(editVariants);
 
           // 이미지 수정 3안 결과 대기
           const editResults = await editPromise;
           let editCount = 0;
           editResults.forEach((imgUrl, i) => {
             if (imgUrl) {
-              const variant = newVariants[0];
+              const variant = editVariants[0];
               pools.addImageToPool(imgUrl, variant?.textColor, variant?.bgTreatment, {
                 generationPrompt: text,
                 generationStyle: "realistic",
