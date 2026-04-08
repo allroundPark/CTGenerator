@@ -147,27 +147,33 @@ export async function POST(req: NextRequest) {
   let useSubjectPipeline = false; // 2단계 파이프라인 (주제부 생성 → 상단 확장)
 
   if (edit) {
+    // variation별 크리에이티브 방향
+    const variationHints = [
+      "Style: faithful edit. Stay close to the original, apply the change minimally and elegantly.",
+      "Style: creative reinterpretation. Apply the change boldly with a fresh aesthetic. Shift the mood, try a different color grade or lighting that matches the request.",
+      "Style: dramatic transformation. Push the edit further — stronger color shift, more atmospheric, cinematic feel. Make it visually striking and unexpected.",
+    ];
+    const hint = variationHints[variation ?? 0] || variationHints[0];
+
     fullPrompt = `Edit this image: "${prompt}"
 ${originalPrompt ? `Original context: "${originalPrompt}"` : ""}
 
-CRITICAL — UI CLEANUP:
-- If the image has card borders, rounded corners, padding, or gray edges: REMOVE them completely
-- If the image has text overlays, labels, icons, hearts, UI elements: REMOVE them
+${hint}
+
+UI CLEANUP (CRITICAL):
+- REMOVE all card borders, rounded corners, padding, gray edges
+- REMOVE all text overlays, labels, icons, hearts, UI elements
 - Fill removed areas with natural background continuation
-- Output must be edge-to-edge, NO borders, NO padding
+- Output must be FULL edge-to-edge image, NO borders, NO padding, NO cropping
 
-PRESERVE (do NOT change these):
-- Brand logos, CI marks, and brand-specific colors — these are intentional design elements
-- The overall color harmony and balance of the original image
-- The relative color relationships between elements (if background is cool-toned, keep it cool)
+PRESERVE:
+- Brand logos and CI marks (these are intentional)
+- Overall color harmony — shift mid-tones, keep whites/blacks intact
+- The subject's identity and composition
 
-COLOR EDITING RULES:
-- When changing color tone, apply it as a subtle shift, not a heavy filter
-- Maintain contrast ratios and readability
-- Keep whites white, keep blacks black — shift mid-tones only
-- If the original has a specific color palette (e.g. brand colors), preserve the palette's harmony while applying the requested change
-
-Output: 1:1 square, maximum sharpness (1005×1044px), top ~35% low-contrast for text zone`;
+OUTPUT: 1:1 square (MUST be exactly square), maximum sharpness (1005×1044px)
+- If the input is not square, EXTEND (outpaint) to make it square. Do NOT crop.
+- Top ~35% should be low-contrast for text overlay zone`;
     console.log(`[image-gen] edit mode, prompt length=${fullPrompt.length}`);
   } else if (enhance) {
     // 첨부 이미지 보정 모드 — 프리셋 없이 보정 전용 프롬프트
