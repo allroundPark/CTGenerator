@@ -4,10 +4,10 @@ import { buildImagePrompt, detectBrandName } from "@/lib/imagePrompt";
 import { promises as fs } from "fs";
 import path from "path";
 
-// 이미지 생성 모델 (고품질 → 폴백)
+// 이미지 생성 모델 (나노바나나2 → Pro 폴백)
 const IMAGE_MODELS = [
+  "gemini-3.1-flash-image-preview",
   "gemini-3-pro-image-preview",
-  "gemini-2.5-flash-image",
 ];
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -105,16 +105,27 @@ function fetchWithTimeout(
   url: string,
   init: RequestInit,
   clientSignal?: AbortSignal | null,
-  timeoutMs = 180000,
+  timeoutMs = 45000,
 ): Promise<Response> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => {
+    console.log(`[fetchWithTimeout] ${timeoutMs}ms timeout hit, aborting`);
+    controller.abort();
+  }, timeoutMs);
   // 클라이언트가 끊으면 Gemini 요청도 즉시 abort
   if (clientSignal) {
-    clientSignal.addEventListener("abort", () => controller.abort(), { once: true });
+    if (clientSignal.aborted) {
+      controller.abort();
+    } else {
+      clientSignal.addEventListener("abort", () => controller.abort(), { once: true });
+    }
   }
   return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
 }
+
+// body size 제한 해제 (base64 이미지 포함 요청) + 긴 실행 시간 허용
+export const maxDuration = 120;
+export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   const apiKey = getApiKey(req);
@@ -136,27 +147,16 @@ export async function POST(req: NextRequest) {
   let useSubjectPipeline = false; // 2단계 파이프라인 (주제부 생성 → 상단 확장)
 
   if (edit) {
-    // 수정 전용 모드 — 기존 이미지를 기반으로 수정, 2단계 파이프라인 스킵
-    fullPrompt = `You are EDITING an existing card background image. The user wants specific changes applied to the attached image.
+    // 수정 전용 모드 — 심플한 프롬프트로 빠른 응답
+    fullPrompt = `Edit this image: "${prompt}"
+${originalPrompt ? `Original context: "${originalPrompt}"` : ""}
 
-ATTACHED: The current card background image that must be preserved as the base.
-USER REQUEST: "${prompt}"
-${originalPrompt ? `\nORIGINAL GENERATION CONTEXT: This image was originally generated for "${originalPrompt}". Maintain the same theme and subject while applying the user's edit request.` : ""}
-
-QUALITY REQUIREMENTS (CRITICAL):
-- Output resolution: 1005×1044px (3x of 335×348). Every pixel matters.
-- ZERO pixel artifacts: no jagged edges, no compression noise, no blurring, no aliasing
-- ZERO cropping: the ENTIRE content of the original image must be preserved. Do NOT cut off any edges, corners, or subjects. If the aspect ratio needs adjustment, ADD content (outpaint) rather than removing it.
-- Crisp, sharp details throughout — the image must look pristine at 3x pixel density
-- Clean upscaling: if the source is low-res, intelligently enhance detail rather than producing a blurry enlargement
-
-COMPOSITION RULES:
-- PRESERVE the overall composition, subject placement, and layout of the attached image
-- ONLY modify what the user specifically requested (e.g. brightness, color tone, style adjustment, mood change)
-- Maintain 1:1 square aspect ratio
-- Keep the text-safe zone (top ~35%) with low contrast for text overlay
-- Do NOT regenerate from scratch — this is an EDIT, not a new generation
-- The result should look like the same image with targeted modifications`;
+Rules:
+- Apply ONLY the requested change (color, tone, style, brightness, etc.)
+- Keep the subject and composition intact
+- Remove any text overlays if present, fill with natural background
+- Output: 1:1 square, sharp, no text/UI/watermarks
+- Top 35% should be low-contrast (text overlay zone)`;
     console.log(`[image-gen] edit mode, prompt length=${fullPrompt.length}`);
   } else if (enhance) {
     // 첨부 이미지 보정 모드 — 프리셋 없이 보정 전용 프롬프트
@@ -280,7 +280,7 @@ User context: ${prompt}`;
             },
           },
         }),
-      }, clientSignal, 180000);
+      }, clientSignal);
 
       if (!geminiRes.ok) {
         const errText = await geminiRes.text();
@@ -331,11 +331,25 @@ User context: ${prompt}`;
     );
   }
 
-  // 주제부 파이프라인이 아니면 (enhance 등) Step 1 결과를 바로 반환
+  // 주제부 파이프라인이 아니면 (edit/enhance) Step 1 결과를 바로 반환
   if (!useSubjectPipeline) {
+    // edit 모드: 텍스트 응답에서 extractedText JSON 파싱 시도
+    let extractedText = null;
+    if (edit && step1Text) {
+      try {
+        const jsonMatch = step1Text.match(/\{[\s\S]*"extractedText"[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          extractedText = parsed.extractedText || null;
+        }
+      } catch {
+        console.log("[image-gen] extractedText 파싱 실패, 무시");
+      }
+    }
     return NextResponse.json({
       image: step1Image,
       text: step1Text,
+      ...(extractedText ? { extractedText } : {}),
     });
   }
 
@@ -376,7 +390,7 @@ RULES:
             },
           },
         }),
-      }, clientSignal, 180000);
+      }, clientSignal);
 
       if (!geminiRes.ok) {
         const errText = await geminiRes.text();

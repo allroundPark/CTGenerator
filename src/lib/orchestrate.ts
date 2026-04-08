@@ -5,38 +5,74 @@ import { ContentSpec, CTContent, BrandContext } from "@/types/ct";
 
 type ApiFetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 
-// ── fetchWithTimeout: AbortController 기반 타임아웃 래퍼 ──
+// ── fetchWithTimeout: 타임아웃 래퍼 (서버 사이드에 45초 타임아웃이 있으므로 클라이언트는 넉넉하게) ──
 async function fetchWithTimeout(
   apiFetch: ApiFetchFn,
   url: string,
   init: RequestInit,
-  timeoutMs = 30000,
+  _timeoutMs = 60000,
 ): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await apiFetch(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
+  return apiFetch(url, init);
 }
 
-// ── extract-spec: 유저 발화에서 ContentSpec 필드 추출 ──
+// ── extract-spec: 유저 발화에서 필드 추출 + 실행 판단 ──
+export type ExtractAction = "generate" | "edit_image" | "edit_copy" | "edit_sub" | "need_info";
+
+export interface ExtractResult {
+  extracted: Partial<ContentSpec>;
+  action: ExtractAction;
+  question: string | null;
+}
+
 export async function extractSpec(
   message: string,
   currentSpec: ContentSpec,
   apiFetch: ApiFetchFn,
-): Promise<Partial<ContentSpec>> {
+): Promise<ExtractResult> {
   try {
     const res = await fetchWithTimeout(apiFetch, "/api/extract-spec", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message, currentSpec }),
     });
-    const { extracted } = await res.json();
-    return extracted || {};
+    const data = await res.json();
+    return {
+      extracted: data.extracted || {},
+      action: data.action || "generate",
+      question: data.question || null,
+    };
   } catch {
-    return {};
+    return { extracted: {}, action: "generate", question: null };
+  }
+}
+
+// ── orchestrate: 의도 파악 + 브랜드 검색 + 문구 생성을 1개 HTTP 연결로 ──
+export interface OrchestrateResult extends ExtractResult {
+  brandContext: BrandContext | null;
+  variants: CTContent[];
+}
+
+export async function orchestrate(
+  message: string,
+  currentSpec: ContentSpec,
+  apiFetch: ApiFetchFn,
+): Promise<OrchestrateResult> {
+  try {
+    const res = await fetchWithTimeout(apiFetch, "/api/orchestrate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, currentSpec }),
+    });
+    const data = await res.json();
+    return {
+      extracted: data.extracted || {},
+      action: data.action || "generate",
+      question: data.question || null,
+      brandContext: data.brandContext || null,
+      variants: data.variants || [],
+    };
+  } catch {
+    return { extracted: {}, action: "generate", question: null, brandContext: null, variants: [] };
   }
 }
 
@@ -124,11 +160,14 @@ export async function generateParallelImages(
 ): Promise<(string | null)[]> {
   const count = opts.count ?? 3;
 
-  const promises = Array.from({ length: count }, (_, i) =>
-    generateSingleImage(prompt, variant, brandContext, i, opts, apiFetch, errors),
-  );
-
-  return Promise.all(promises);
+  // 순차 생성: Chrome 동시 연결 제한(6개) 회피 + 새로고침 항상 가능
+  // 첫 이미지가 빨리 보이고, 나머지는 순차적으로 추가
+  const results: (string | null)[] = [];
+  for (let i = 0; i < count; i++) {
+    const result = await generateSingleImage(prompt, variant, brandContext, i, opts, apiFetch, errors);
+    results.push(result);
+  }
+  return results;
 }
 
 async function generateSingleImage(
@@ -159,7 +198,7 @@ async function generateSingleImage(
         ...(opts.edit ? { edit: true } : {}),
         ...(opts.originalPrompt ? { originalPrompt: opts.originalPrompt } : {}),
       }),
-    }, 180000);
+    }, 60000);
     if (!res.ok) {
       const errBody = await res.json().catch(() => ({ error: res.statusText }));
       const errMsg = `${res.status}: ${errBody.error || res.statusText}`;

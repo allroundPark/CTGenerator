@@ -541,6 +541,7 @@ export default function Home() {
             onReport={(rating) => { setReportRating(rating ?? null); setShowReport(true); }}
             onQuickRate={handleQuickRate}
             onInputFocusChange={handleInputFocusChange}
+            onRaiseSheet={raiseSheet}
             hasContent={orch.hasContent}
           />
           </div>

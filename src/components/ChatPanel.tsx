@@ -15,6 +15,7 @@ interface ChatPanelProps {
   onReport?: (rating?: ReportRating) => void;
   onQuickRate?: (msgId: string, rating: "good" | "bad") => Promise<boolean>;
   onInputFocusChange?: (focused: boolean) => void;
+  onRaiseSheet?: () => void;
   placeholder?: string;
   collapsed?: boolean;
   highlightAttach?: boolean;
@@ -126,9 +127,16 @@ function ThumbsButtons({ msgId, onQuickRate, onReport }: {
   );
 }
 
-export default function ChatPanel({ messages, onSend, isLoading, genStatus, onViewCanvas, onReport, onQuickRate, onInputFocusChange, placeholder, collapsed, highlightAttach, hasContent }: ChatPanelProps) {
+export default function ChatPanel({ messages, onSend, isLoading, genStatus, onViewCanvas, onReport, onQuickRate, onInputFocusChange, onRaiseSheet, placeholder, collapsed, highlightAttach, hasContent }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
+
+  // 이미지 첨부 시 바텀시트 올리기
+  useEffect(() => {
+    if (attachedImages.length > 0) {
+      onRaiseSheet?.();
+    }
+  }, [attachedImages.length, onRaiseSheet]);
 
   useEffect(() => {
     if (scrollRef.current) {

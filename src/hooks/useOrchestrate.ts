@@ -12,12 +12,14 @@ import { useChatMessages } from "./useChatMessages";
 import { useCardPools } from "./useCardPools";
 import {
   extractSpec,
+  orchestrate,
   classifyByDiff,
   searchBrand,
   generateText,
   generateParallelImages,
   suggestField,
   suggestContent,
+  type ExtractAction,
 } from "@/lib/orchestrate";
 import { matchDemoScenario, loadDemoCache } from "@/lib/demoCache";
 import { getKnownBrandContext } from "@/lib/imagePrompt";
@@ -61,6 +63,34 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
       reader.onload = () => resolve((reader.result as string).split(",")[1]);
       reader.onerror = reject;
       reader.readAsDataURL(file);
+    });
+  }
+
+  /** 이미지를 maxSize로 리사이즈 후 base64 반환 (Gemini 전송 최적화) */
+  async function fileToResizedBase64(file: File, maxSize = 1024): Promise<{ data: string; mimeType: string }> {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let w = img.width, h = img.height;
+        if (w > maxSize || h > maxSize) {
+          const scale = maxSize / Math.max(w, h);
+          w = Math.round(w * scale);
+          h = Math.round(h * scale);
+        }
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(img, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+        resolve({
+          data: dataUrl.split(",")[1],
+          mimeType: "image/jpeg",
+        });
+        URL.revokeObjectURL(img.src);
+      };
+      img.onerror = reject;
+      img.src = URL.createObjectURL(file);
     });
   }
 
@@ -146,8 +176,15 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
 
     // extract-spec으로 수정 의도 추출
     showStatus("요청 분석 중...");
-    const extracted = await extractSpec(text, contentSpec, apiFetch);
-    const intent = classifyByDiff(extracted, text);
+    console.log(`[handleModification] text="${text.slice(0, 50)}", hasImages=${!!attachedImages}, applyImages=${applyImages.length}, editImages=${editImages.length}`);
+    const { extracted, action } = await extractSpec(text, contentSpec, apiFetch);
+    // action을 기존 intent 형태로 매핑
+    const intentMap: Record<string, string> = {
+      edit_image: "image", edit_copy: "copy", edit_sub: "sub",
+      generate: "new", need_info: "image",
+    };
+    const intent = intentMap[action] || classifyByDiff(extracted, text);
+    console.log(`[handleModification] action="${action}", intent="${intent}", extracted=`, extracted);
 
     // spec 업데이트
     if (Object.keys(extracted).length > 0) {
@@ -280,65 +317,78 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
 
     // 이미지+텍스트 동시 첨부 시: extract-spec으로 의도 파악 → edit/enhance 분기
     const hasAttachedImages = applyImages.length > 0 || editImages.length > 0 || refImages.length > 0;
+    console.log(`[handleFirstGeneration] text="${text.slice(0, 50)}", hasAttachedImages=${hasAttachedImages}, applyImages=${applyImages.length}`);
     if (hasAttachedImages && text) {
       showStatus("요청 분석 중...");
-      const extracted = await extractSpec(text, contentSpec, apiFetch);
+      const { extracted, action } = await extractSpec(text, contentSpec, apiFetch);
+      console.log(`[handleFirstGeneration] extract action="${action}", extracted=`, extracted);
       if (Object.keys(extracted).length > 0) {
         setContentSpec((prev) => ({ ...prev, ...extracted }));
       }
-      // 이미지 수정 의도가 있으면 (imageStyle 변경, 또는 이미지 관련 키워드)
-      const isImageEdit = !!extracted.imageStyle ||
+      // LLM이 이미지 수정 의도로 판단했거나, 키워드 매칭
+      const isImageEdit = action === "edit_image" || !!extracted.imageStyle ||
         /바꿔|변경|수정|톤|밝게|어둡게|색감|분위기|초록|파란|빨간|노란|보라|핑크/.test(text);
+      console.log(`[handleFirstGeneration] isImageEdit=${isImageEdit}, action=${action}, imageStyle=${extracted.imageStyle}`);
       if (isImageEdit) {
-        // 이미지 수정 + 문구 생성 병렬 진행
-        showStatus("이미지 수정 & 문구 생성 중...");
-        const imgErrors: string[] = [];
-        const targetImg = applyImages[0] || editImages[0];
-        const b64 = await fileToBase64(targetImg.file);
-        const refData = [{ data: b64, mimeType: targetImg.file.type || "image/jpeg" }];
+        // 이미지 수정 + 문구 생성 병렬 진행 (에러 내부 처리, 재시도 방지)
+        try {
+          showStatus("이미지 수정 & 문구 생성 중...");
+          const imgErrors: string[] = [];
+          const targetImg = applyImages[0] || editImages[0];
+          // 리사이즈해서 전송 (833kb→~100kb, Gemini 처리 시간 대폭 절감)
+          const resized = await fileToResizedBase64(targetImg.file, 1024);
+          const refData = [resized];
 
-        // 이미지 수정과 문구 생성을 병렬로
-        const editPromise = generateParallelImages(
-          text,
-          { imageType: "" } as CTContent,
-          brandCtx,
-          { count: 1, edit: true, referenceImages: refData },
-          apiFetch,
-          imgErrors,
-        );
+          // 이미지 수정과 문구 생성을 병렬로
+          const editPromise = generateParallelImages(
+            text,
+            { imageType: "" } as CTContent,
+            brandCtx,
+            { count: 1, edit: true, referenceImages: refData },
+            apiFetch,
+            imgErrors,
+          );
 
-        // 브랜드 검색 + 문구 생성
-        const specForText = { ...contentSpec, ...extracted };
-        const knownBrand = getKnownBrandContext(specForText.brand || text);
-        const brandSearchResult = knownBrand ? null : await searchBrand(specForText.brand || text, apiFetch);
-        const activeBrandCtx: BrandContext | null = knownBrand
-          ? ({ ...knownBrand, mascotName: null, mascotDescription: null, mascotImage: null } as BrandContext)
-          : brandSearchResult;
-        if (activeBrandCtx) setBrandCtx(activeBrandCtx);
+          // 브랜드 검색 + 문구 생성
+          const specForText = { ...contentSpec, ...extracted };
+          const knownBrand = getKnownBrandContext(specForText.brand || text);
+          const brandSearchResult = knownBrand ? null : await searchBrand(specForText.brand || text, apiFetch);
+          const activeBrandCtx: BrandContext | null = knownBrand
+            ? ({ ...knownBrand, mascotName: null, mascotDescription: null, mascotImage: null } as BrandContext)
+            : brandSearchResult;
+          if (activeBrandCtx) setBrandCtx(activeBrandCtx);
 
-        const textPrompt = [specForText.brand, specForText.content].filter(Boolean).join(" ") || text;
-        const newVariants = await generateText(textPrompt, activeBrandCtx, apiFetch);
-        pools.appendToPool(newVariants);
+          const textPrompt = [specForText.brand, specForText.content].filter(Boolean).join(" ") || text;
+          const newVariants = await generateText(textPrompt, activeBrandCtx, apiFetch);
+          pools.appendToPool(newVariants);
 
-        // 이미지 수정 결과 대기
-        const editResults = await editPromise;
-        if (editResults[0]) {
-          const variant = newVariants[0];
-          pools.addImageToPool(editResults[0], variant?.textColor, variant?.bgTreatment, {
-            generationPrompt: text,
-            generationStyle: "realistic",
-            generationVariation: 0,
+          // 이미지 수정 결과 대기
+          const editResults = await editPromise;
+          if (editResults[0]) {
+            const variant = newVariants[0];
+            pools.addImageToPool(editResults[0], variant?.textColor, variant?.bgTreatment, {
+              generationPrompt: text,
+              generationStyle: "realistic",
+              generationVariation: 0,
+            });
+          }
+
+          const failDetail = !editResults[0] && imgErrors.length > 0 ? ` (${imgErrors[0]})` : "";
+          chat.addMessage({
+            role: "assistant",
+            content: editResults[0]
+              ? "완성! 이상한 거 있으면 추가 요청해주세요."
+              : `문구는 완성! 이미지 수정에 실패했어요.${failDetail}`,
+            showReport: !!editResults[0],
+          });
+        } catch (e) {
+          console.error("[handleFirstGeneration] isImageEdit error:", e);
+          const msg = e instanceof Error ? e.message : "알 수 없는 오류";
+          chat.addMessage({
+            role: "assistant",
+            content: `이미지 수정에 실패했어요. (${msg})`,
           });
         }
-
-        const failDetail = !editResults[0] && imgErrors.length > 0 ? ` (${imgErrors[0]})` : "";
-        chat.addMessage({
-          role: "assistant",
-          content: editResults[0]
-            ? "완성! 이상한 거 있으면 추가 요청해주세요."
-            : `문구는 완성! 이미지 수정에 실패했어요.${failDetail}`,
-          showReport: !!editResults[0],
-        });
         return;
       }
     }
@@ -505,6 +555,7 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
 
   // ── handleSend: 통합 생성 (first + modification) + 재시도 + 캐시 fallback ──
   const handleSend = async (text: string, attachedImages?: AttachedImage[]) => {
+    console.log(`[handleSend] text="${text.slice(0, 50)}", hasImages=${!!attachedImages}, hasContent=${pools.hasContent}`);
     setIsLoading(true);
 
     const doGenerate = async () => {
@@ -557,7 +608,8 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
     }
   };
 
-  // ── handleMessage: 대화 라우팅 ──
+  // ── handleMessage: LLM 통합 라우터 ──
+  // Claude Code 방식: LLM이 의도 판단 → 바로 실행. 질문은 최후의 수단.
   const handleMessage = async (
     rawText: string,
     images?: AttachedImage[],
@@ -572,241 +624,135 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
       attachedImages: images,
     });
 
-    // 이미지 첨부 대기 중 + 텍스트만 → AI 생성
-    if (highlightAttach && !images?.length) {
-      setHighlightAttach(false);
-      setChatPlaceholder("만들고 싶은 콘텐츠를 알려주세요");
-      const prompt = [contentSpec.brand, contentSpec.content]
-        .filter(Boolean)
-        .join(" ");
-      chat.addMessage({
-        role: "assistant",
-        content: "알겠어요, AI가 알아서 만들어볼게요!",
-      });
-      await handleSend(prompt || text);
-      return;
-    }
+    // 이미지가 없지만 이전 첨부 이미지가 있으면 복원
+    const effectiveImages = images || lastAttachedImagesRef.current || undefined;
+    if (effectiveImages && !images) lastAttachedImagesRef.current = null;
 
-    // 이미 카드 있으면 수정 모드
-    const hasImages = !!(images && images.length > 0);
+    console.log(`[handleMessage] text="${text}", hasImages=${!!images}, effectiveImages=${!!effectiveImages}, hasContent=${pools.hasContent}`);
+
+    // 이미 카드 있으면 수정 모드 → handleSend가 handleModification 호출
     if (pools.hasContent) {
-      // 이미지가 없지만 lastAttachedImages가 있으면 복원 (옵션 선택 후)
-      const effectiveImages = images || lastAttachedImagesRef.current || undefined;
-      if (effectiveImages) lastAttachedImagesRef.current = null;
+      console.log("[handleMessage] → 수정 모드 (pools.hasContent=true)");
       await handleSend(text, effectiveImages);
       return;
     }
 
-    // 이미지 첨부 시: 텍스트가 있으면 LLM 의도 판별, 없으면 질문
-    if (hasImages) {
-      // 이미지 첨부 시: 텍스트 유무와 관계없이 바로 생성
-      // 텍스트 없으면 handleFirstGeneration에서 이미지 분석으로 문구 유추
-      await handleSend(text || "이 이미지로 카드 만들어줘", images);
+    // 이미지 첨부 시 → 바로 생성 (orchestrate 건너뜀, 이미지가 핵심 입력)
+    if (effectiveImages) {
+      console.log("[handleMessage] → 이미지 첨부 → handleSend 직행");
+      await handleSend(text || "이 이미지로 카드 만들어줘", effectiveImages);
       return;
     }
 
-    // 옵션 선택 후 이미지 복원 (lastAttachedImages가 있으면 이전 이미지 첨부 질문의 응답)
-    if (lastAttachedImagesRef.current) {
-      const savedImages = lastAttachedImagesRef.current;
-      lastAttachedImagesRef.current = null;
-      await handleSend(text, savedImages);
-      return;
-    }
+    // LLM에게 의도 판단 위임
+    const statusId = chat.addMessage({
+      role: "assistant",
+      content: "생각하는 중...",
+      type: "status",
+    });
 
-    // ── Extract-Spec: LLM 필드 추출 → 클라이언트 판단 ──
     try {
-      const statusId = chat.addMessage({
-        role: "assistant",
-        content: "생각하는 중...",
-        type: "status",
-      });
+      // 통합 orchestrate: 의도 파악 + 브랜드 검색 + 문구 생성을 1개 HTTP 연결로
+      const result = await orchestrate(text, contentSpec, apiFetch);
+      const { extracted, action, question, brandContext: orchBrandCtx, variants } = result;
 
-      // 위임형 발화 → 현재 spec으로 생성
-      const isDelegation =
-        text === "AI가 바로 만들기" ||
-        (contentSpec.brand &&
-          /그냥|걍|알아서|다해|니가|너가|넘어가|바로.*만들|만들어줘|ㄱㄱ|고고/.test(
-            text,
-          ));
-      if (isDelegation) {
-        setHighlightAttach(false);
-        const prompt = [contentSpec.brand, contentSpec.content]
-          .filter(Boolean)
-          .join(" ");
-        chat.updateMessage(statusId, {
-          content: "만들어볼게요!",
-          type: "text",
-        });
-        await handleSend(prompt || text, images);
-        return;
+      // spec 업데이트
+      if (Object.keys(extracted).length > 0) {
+        setContentSpec((prev) => ({ ...prev, ...extracted }));
       }
 
-      // 고정 응답 처리
-      if (text === "텍스트 초안 있어요") {
-        chat.updateMessage(statusId, {
-          content: "텍스트 초안을 입력해주세요!",
-          type: "text",
-        });
-        setChatPlaceholder("텍스트 초안을 입력해주세요");
-        raiseSheet();
-        return;
-      }
-
-      if (text === "이미지 있어요") {
-        setHighlightAttach(true);
-        setContentSpec((prev) => ({ ...prev, imageSource: "upload" }));
-        chat.updateMessage(statusId, {
-          content: "이미지를 첨부해주세요!",
-          type: "text",
-        });
-        setChatPlaceholder("이미지를 첨부해주세요");
-        raiseSheet();
-        return;
-      }
-
-      if (text === "둘 다 있어요") {
-        setHighlightAttach(true);
-        setContentSpec((prev) => ({ ...prev, imageSource: "upload" }));
-        chat.updateMessage(statusId, {
-          content: "텍스트 초안을 입력하고, 이미지도 첨부해주세요!",
-          type: "text",
-        });
-        setChatPlaceholder("텍스트 초안을 입력하세요 (이미지도 첨부)");
-        raiseSheet();
-        return;
-      }
-
-      if (text === "AI가 알아서 해주세요") {
-        // brand가 있든 없든, 가진 정보로 바로 생성
-        const prompt = [contentSpec.brand, contentSpec.content]
-          .filter(Boolean)
-          .join(" ") || "현대카드 앱 서비스 혜택";
-        chat.updateMessage(statusId, {
-          content: "AI가 알아서 만들어볼게요!",
-          type: "text",
-        });
-        await handleSend(prompt, images);
-        return;
-      }
-
-      // extract-spec 호출
-      const extracted = await extractSpec(text, contentSpec, apiFetch);
       const newSpec = { ...contentSpec, ...extracted };
-      setContentSpec(newSpec);
+      const prompt = [newSpec.brand, newSpec.content].filter(Boolean).join(" ") || text;
 
-      // 클라이언트 판단
-      if (!newSpec.brand) {
-        // content는 있는데 brand만 없으면 content를 brand로 간주하고 바로 생성 옵션 제공
-        if (newSpec.content) {
-          chat.updateMessage(statusId, {
-            content: `"${newSpec.content}" 관련 콘텐츠를 만들까요?`,
-            type: "options",
-            options: [
-              { label: "AI가 바로 만들기", value: "AI가 바로 만들기" },
-              { label: "브랜드 지정하기", value: "브랜드 지정하기" },
-            ],
-          });
-        } else {
-          chat.updateMessage(statusId, {
-            content: "어떤 브랜드/주제의 콘텐츠를 만들까요?",
-            type: "options",
-            options: [
-              { label: "AI가 알아서 해주세요", value: "AI가 알아서 해주세요" },
-              { label: "대한항공카드", value: "대한항공카드" },
-              { label: "마켓컬리", value: "마켓컬리" },
-              { label: "자동차대출", value: "자동차대출" },
-            ],
-          });
-        }
-        raiseSheet();
-      } else if (!newSpec.content) {
-        chat.updateMessage(statusId, {
-          content: `${newSpec.brand} 관련 소재를 찾고 있어요...`,
-          type: "status",
-        });
-        try {
-          const suggestions = await suggestContent(newSpec.brand, apiFetch);
-          const options = [
-            { label: "AI가 알아서 해주세요", value: "AI가 알아서 해주세요" },
-            ...suggestions.map((s) => ({ label: s, value: s })),
-          ];
-          chat.updateMessage(statusId, {
-            content: `${newSpec.brand} 관련 어떤 내용을 담을까요?`,
-            type: "options",
-            options,
-          });
-        } catch {
-          chat.updateMessage(statusId, {
-            content: `${newSpec.brand} 관련 어떤 내용을 담을까요?`,
-            type: "options",
-            options: [
-              {
-                label: "AI가 알아서 해주세요",
-                value: "AI가 알아서 해주세요",
-              },
-            ],
-          });
-        }
-        raiseSheet();
-      } else if (newSpec.textDraft && !contentSpec.textDraft) {
-        chat.updateMessage(statusId, {
-          content: "초안을 받았어요! 어떻게 활용할까요?",
-          type: "options",
-          options: [
-            { label: "초안 바로 적용", value: "초안 바로 적용" },
-            { label: "초안 보정해서 적용", value: "초안 보정해서 적용" },
-            { label: "초안 기반 새로 생성", value: "초안 기반 새로 생성" },
-          ],
-        });
-        raiseSheet();
-      } else {
-        const hasText = !!newSpec.textDraft;
-        const hasImage = !!newSpec.imageSource;
+      switch (action) {
+        case "generate": {
+          // 문구가 이미 생성되어 왔으면 바로 적용, 이미지만 생성
+          if (variants.length > 0) {
+            chat.updateMessage(statusId, { content: "이미지 생성 중...", type: "status" });
+            if (orchBrandCtx) setBrandCtx(orchBrandCtx);
+            pools.appendToPool(variants);
 
-        if (hasText && hasImage) {
-          const prompt = [newSpec.brand, newSpec.content]
-            .filter(Boolean)
-            .join(" ");
+            // 이미지 생성만 별도로 (이것만 병렬 HTTP 연결 사용)
+            setIsLoading(true);
+            showStatus("이미지 3장 동시 생성 중...");
+            const imgErrors: string[] = [];
+
+            // 이미지 첨부는 이미 위에서 handleSend로 분기됨, 여기는 텍스트 전용
+            const results = await generateParallelImages(
+              prompt,
+              variants[0],
+              orchBrandCtx,
+              { count: 3 },
+              apiFetch,
+              imgErrors,
+            );
+            const STYLE_MAP: Array<"realistic" | "3d" | "2d"> = ["realistic", "3d", "2d"];
+            let generatedCount = 0;
+            results.forEach((imgUrl, i) => {
+              if (imgUrl) {
+                const variant = variants[i] || variants[0];
+                pools.addImageToPool(imgUrl, variant.textColor, variant.bgTreatment, {
+                  generationPrompt: prompt,
+                  generationStyle: STYLE_MAP[i] || "realistic",
+                  generationVariation: i,
+                });
+                generatedCount++;
+              }
+            });
+
+            const failDetail = generatedCount === 0 && imgErrors.length > 0 ? ` (${imgErrors[0]})` : "";
+            showStatus(
+              generatedCount > 0
+                ? `완성! 각 영역을 넘기면서 조합해보세요.`
+                : `문구는 완성! 이미지 생성에 실패했어요.${failDetail}`,
+            );
+            chat.addMessage({
+              role: "assistant",
+              content: generatedCount > 0
+                ? "완성! 이상한 거 있으면 추가 요청해주세요."
+                : `문구를 만들었어요! 이미지를 첨부하거나 요청해보세요.`,
+              showReport: generatedCount > 0,
+            });
+            setIsLoading(false);
+          } else {
+            // variants가 없으면 기존 handleSend 폴백
+            chat.updateMessage(statusId, { content: "만들어볼게요!", type: "text" });
+            await handleSend(prompt, effectiveImages);
+          }
+          break;
+        }
+        case "edit_image": {
+          chat.updateMessage(statusId, { content: "이미지 수정 중...", type: "status" });
+          await handleSend(text, effectiveImages);
+          break;
+        }
+        case "edit_copy": {
+          chat.updateMessage(statusId, { content: "문구 수정 중...", type: "status" });
+          await handleSend(text, effectiveImages);
+          break;
+        }
+        case "edit_sub": {
+          chat.updateMessage(statusId, { content: "하단 텍스트 수정 중...", type: "status" });
+          await handleSend(text, effectiveImages);
+          break;
+        }
+        case "need_info": {
           chat.updateMessage(statusId, {
-            content: "만들어볼게요!",
+            content: question || "어떤 브랜드/주제의 콘텐츠를 만들까요?",
             type: "text",
           });
-          await handleSend(prompt);
-        } else if (hasText && !hasImage) {
-          chat.updateMessage(statusId, {
-            content: `텍스트는 받았어요! 이미지는 어떻게 할까요?`,
-            type: "options",
-            options: [
-              { label: "AI가 바로 만들기", value: "AI가 바로 만들기" },
-              { label: "이미지 있어요", value: "이미지 있어요" },
-            ],
-          });
-        } else if (!hasText && hasImage) {
-          chat.updateMessage(statusId, {
-            content: `이미지는 받았어요! 텍스트는 어떻게 할까요?`,
-            type: "options",
-            options: [
-              { label: "AI가 바로 만들기", value: "AI가 바로 만들기" },
-              { label: "텍스트 초안 있어요", value: "텍스트 초안 있어요" },
-            ],
-          });
-        } else {
-          chat.updateMessage(statusId, {
-            content: `${newSpec.brand} — ${newSpec.content}`,
-            type: "options",
-            options: [
-              { label: "AI가 바로 만들기", value: "AI가 바로 만들기" },
-              { label: "텍스트 초안 있어요", value: "텍스트 초안 있어요" },
-              { label: "이미지 있어요", value: "이미지 있어요" },
-              { label: "둘 다 있어요", value: "둘 다 있어요" },
-            ],
-          });
+          raiseSheet();
+          break;
         }
-        raiseSheet();
+        default: {
+          chat.updateMessage(statusId, { content: "만들어볼게요!", type: "text" });
+          await handleSend(prompt, effectiveImages);
+        }
       }
     } catch (e) {
-      console.error("[extract-spec] error:", e);
-      await handleSend(text, images);
+      console.error("[handleMessage] error:", e);
+      chat.updateMessage(statusId, { content: "만들어볼게요!", type: "text" });
+      await handleSend(text, effectiveImages);
     }
   };
 
