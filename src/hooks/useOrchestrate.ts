@@ -220,7 +220,7 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
         );
         foundImageUrl = results[0] || "";
       } else {
-        // 수정 전용 모드: 현재 이미지 + 원본 프롬프트를 전달
+        // 수정 전용 모드: 현재 이미지 기반 3안 생성
         const currentImg = pools.imagePool[pools.selImage];
         const currentImgUrl = currentImg?.imageUrl;
         let refImgs: { data: string; mimeType: string }[] | undefined;
@@ -233,7 +233,7 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
           composite,
           brandCtx,
           {
-            count: 1,
+            count: 3,
             referenceImages: refImgs,
             edit: true,
             originalPrompt: currentImg?.generationPrompt,
@@ -241,23 +241,24 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
           apiFetch,
           imgErrors,
         );
-        foundImageUrl = results[0] || "";
-      }
-      if (foundImageUrl) {
-        // 수정된 이미지에 원본 메타데이터 유지
-        const currentImg = pools.imagePool[pools.selImage];
-        pools.addImageToPool(foundImageUrl, composite.textColor, composite.bgTreatment, {
-          generationPrompt: currentImg?.generationPrompt,
-          generationStyle: currentImg?.generationStyle,
-          generationVariation: currentImg?.generationVariation,
+        results.forEach((imgUrl, i) => {
+          if (imgUrl) {
+            pools.addImageToPool(imgUrl, composite.textColor, composite.bgTreatment, {
+              generationPrompt: currentImg?.generationPrompt,
+              generationStyle: currentImg?.generationStyle,
+              generationVariation: i,
+            });
+          }
         });
+        foundImageUrl = results.find((r) => r !== null) || "";
       }
-      showStatus(foundImageUrl ? "이미지 추가 완료!" : "");
+      const editCount = foundImageUrl ? 1 : 0; // 최소 1개 성공 여부
+      showStatus(foundImageUrl ? "이미지 수정 완료!" : "");
       const failDetail = imgErrors.length > 0 ? ` (${imgErrors[0]})` : "";
       chat.addMessage({
         role: "assistant",
         content: foundImageUrl
-          ? "이미지를 수정했어요! 스와이프해서 비교해보세요."
+          ? "이미지 수정안을 만들었어요! 스와이프해서 비교해보세요."
           : `이미지 수정에 실패했어요.${failDetail}`,
       });
       return intent;
@@ -339,12 +340,12 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
           const resized = await fileToResizedBase64(targetImg.file, 1024);
           const refData = [resized];
 
-          // 이미지 수정과 문구 생성을 병렬로
+          // 이미지 수정 3안 + 문구 생성을 병렬로
           const editPromise = generateParallelImages(
             text,
             { imageType: "" } as CTContent,
             brandCtx,
-            { count: 1, edit: true, referenceImages: refData },
+            { count: 3, edit: true, referenceImages: refData },
             apiFetch,
             imgErrors,
           );
@@ -362,24 +363,28 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
           const newVariants = await generateText(textPrompt, activeBrandCtx, apiFetch);
           pools.appendToPool(newVariants);
 
-          // 이미지 수정 결과 대기
+          // 이미지 수정 3안 결과 대기
           const editResults = await editPromise;
-          if (editResults[0]) {
-            const variant = newVariants[0];
-            pools.addImageToPool(editResults[0], variant?.textColor, variant?.bgTreatment, {
-              generationPrompt: text,
-              generationStyle: "realistic",
-              generationVariation: 0,
-            });
-          }
+          let editCount = 0;
+          editResults.forEach((imgUrl, i) => {
+            if (imgUrl) {
+              const variant = newVariants[0];
+              pools.addImageToPool(imgUrl, variant?.textColor, variant?.bgTreatment, {
+                generationPrompt: text,
+                generationStyle: "realistic",
+                generationVariation: i,
+              });
+              editCount++;
+            }
+          });
 
-          const failDetail = !editResults[0] && imgErrors.length > 0 ? ` (${imgErrors[0]})` : "";
+          const failDetail = editCount === 0 && imgErrors.length > 0 ? ` (${imgErrors[0]})` : "";
           chat.addMessage({
             role: "assistant",
-            content: editResults[0]
-              ? "완성! 이상한 거 있으면 추가 요청해주세요."
+            content: editCount > 0
+              ? `이미지 ${editCount}안을 만들었어요! 스와이프해서 비교해보세요.`
               : `문구는 완성! 이미지 수정에 실패했어요.${failDetail}`,
-            showReport: !!editResults[0],
+            showReport: editCount > 0,
           });
         } catch (e) {
           console.error("[handleFirstGeneration] isImageEdit error:", e);
