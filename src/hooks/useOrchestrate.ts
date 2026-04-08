@@ -335,7 +335,8 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
         try {
           showStatus("이미지 분석 & 수정 중...");
           const imgErrors: string[] = [];
-          const targetImg = applyImages[0] || editImages[0];
+          const targetImg = applyImages[0] || editImages[0] || refImages[0];
+          if (!targetImg) throw new Error("첨부된 이미지를 찾을 수 없어요");
           const resized = await fileToResizedBase64(targetImg.file, 1024);
           const refData = [resized];
 
@@ -391,8 +392,8 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
           let editCount = 0;
           editResults.forEach((imgUrl, i) => {
             if (imgUrl) {
-              const variant = editVariants[0];
-              pools.addImageToPool(imgUrl, variant?.textColor, variant?.bgTreatment, {
+              const variant = editVariants[0] || {};
+              pools.addImageToPool(imgUrl, (variant as CTContent)?.textColor, (variant as CTContent)?.bgTreatment, {
                 generationPrompt: text,
                 generationStyle: "realistic",
                 generationVariation: i,
