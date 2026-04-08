@@ -149,9 +149,9 @@ export async function POST(req: NextRequest) {
   if (edit) {
     // variation별 크리에이티브 방향
     const variationHints = [
-      "Style: faithful edit. Stay close to the original, apply the change minimally and elegantly.",
-      "Style: creative reinterpretation. Apply the change boldly with a fresh aesthetic. Shift the mood, try a different color grade or lighting that matches the request.",
-      "Style: dramatic transformation. Push the edit further — stronger color shift, more atmospheric, cinematic feel. Make it visually striking and unexpected.",
+      "Style: faithful reproduction. Reproduce ALL elements from the original precisely — logos, icons, CI marks, text on objects, box shapes. Apply the requested change (color/tone) while keeping every detail intact.",
+      "Style: refined polish. Same composition, but add subtle unexpected details — a soft light gradient that wasn't there, a gentle shadow that adds depth, a slight texture on surfaces that makes it feel more premium. Small touches that make someone look twice.",
+      "Style: sensory surprise. Keep the subject faithful, but add an unexpected quality — maybe the light catches an edge differently, maybe there's a subtle reflection, a hint of ambient glow, or a barely-there texture shift that creates visual warmth. Not flashy effects, but the kind of detail that makes it feel crafted by hand.",
     ];
     const hint = variationHints[variation ?? 0] || variationHints[0];
 
