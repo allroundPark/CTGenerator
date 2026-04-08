@@ -149,9 +149,9 @@ export async function POST(req: NextRequest) {
   if (edit) {
     // variation별 크리에이티브 방향
     const variationHints = [
-      "Style: faithful reproduction. Reproduce ALL elements from the original precisely — logos, icons, CI marks, text on objects, box shapes. Apply the requested change (color/tone) while keeping every detail intact.",
-      "Style: refined polish. Same composition, but add subtle unexpected details — a soft light gradient that wasn't there, a gentle shadow that adds depth, a slight texture on surfaces that makes it feel more premium. Small touches that make someone look twice.",
-      "Style: sensory surprise. Keep the subject faithful, but add an unexpected quality — maybe the light catches an edge differently, maybe there's a subtle reflection, a hint of ambient glow, or a barely-there texture shift that creates visual warmth. Not flashy effects, but the kind of detail that makes it feel crafted by hand.",
+      "Variation: clean & faithful. Apply the color/tone change cleanly. Keep the subject exactly as-is. The background should be a smooth, even gradient. Simple and polished.",
+      "Variation: premium refinement. Same composition, but elevate the quality — softer light falloff, subtle depth in shadows, slightly richer surface textures on objects. The kind of image that feels expensive. Do NOT add new objects or effects.",
+      "Variation: creative atmosphere. Reinterpret the mood more boldly — different light direction, richer color depth, more contrast between subject and background. Keep the subject intact but make the overall image feel like a different time of day or a different material world. Do NOT add random objects, waveforms, or decorative elements.",
     ];
     const hint = variationHints[variation ?? 0] || variationHints[0];
 
@@ -160,20 +160,27 @@ ${originalPrompt ? `Original context: "${originalPrompt}"` : ""}
 
 ${hint}
 
-UI CLEANUP (CRITICAL):
-- REMOVE all card borders, rounded corners, padding, gray edges
-- REMOVE all text overlays, labels, icons, hearts, UI elements
-- Fill removed areas with natural background continuation
-- Output must be FULL edge-to-edge image, NO borders, NO padding, NO cropping
+YOU ARE GENERATING A BACKGROUND IMAGE. The output will have text overlaid on top later by the app.
 
-PRESERVE:
-- Brand logos and CI marks (these are intentional)
-- Overall color harmony — shift mid-tones, keep whites/blacks intact
-- The subject's identity and composition
+STEP 1 — STRIP EVERYTHING:
+- The input is likely a card screenshot. It has text, borders, rounded corners, hearts, icons overlaid.
+- You MUST produce a CLEAN background with ZERO text, ZERO UI elements, ZERO borders.
+- Where text was: fill with smooth background gradient continuation.
+- Where borders/corners were: extend the background to fill the full square edge-to-edge.
 
-OUTPUT: 1:1 square (MUST be exactly square), maximum sharpness (1005×1044px)
-- If the input is not square, EXTEND (outpaint) to make it square. Do NOT crop.
-- Top ~35% should be low-contrast for text overlay zone`;
+STEP 2 — SUBJECT:
+- Keep the main visual subject (illustrations, photos, 3D objects) intact and well-positioned.
+- Subject should sit in the LOWER 60% of the image. Upper 40% should be clean low-contrast background (text will go there).
+- Preserve logos ON objects (e.g. icons on tiles/cards in the illustration). These are part of the subject, not UI overlay.
+
+STEP 3 — COLOR:
+- Apply the requested change naturally. Shift mid-tones, keep whites/blacks.
+- Maintain the original color harmony. Don't make it look like a cheap filter.
+
+OUTPUT: exactly 1:1 square, edge-to-edge, NO borders, NO padding, NO cropping, maximum sharpness.
+If input is not square, OUTPAINT (extend background) to make square. NEVER crop.
+
+DO NOT add any new objects, decorative elements, waveforms, particles, or effects that weren't in the original.`;
     console.log(`[image-gen] edit mode, prompt length=${fullPrompt.length}`);
   } else if (enhance) {
     // 첨부 이미지 보정 모드 — 프리셋 없이 보정 전용 프롬프트
