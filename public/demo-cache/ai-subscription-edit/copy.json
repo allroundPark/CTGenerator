@@ -1,0 +1,121 @@
+[
+  {
+    "id": "variant-original",
+    "label": "AI 통합 구독 서비스",
+    "titleLine1": "ChatGPT 포함 30여 종의",
+    "titleLine2": "최신 AI를 한 곳에서 이용해요",
+    "subLine1": "",
+    "subLine2": "",
+    "imageUrl": "",
+    "imageConstraint": {
+      "fit": "cover",
+      "alignX": "center",
+      "alignY": "center"
+    },
+    "textColor": "BK",
+    "bgTreatment": { "type": "none" },
+    "imageType": "VECTOR-UI"
+  },
+  {
+    "id": "variant-1",
+    "label": "AI 통합 구독",
+    "titleLine1": "서비스마다 따로?",
+    "titleLine2": "한 번에 최저가로 즐겨요",
+    "subLine1": "ChatGPT 등 30+ 인기 AI",
+    "subLine2": "구독료 최대 50% 할인",
+    "imageUrl": "",
+    "imageConstraint": {
+      "fit": "cover",
+      "alignX": "center",
+      "alignY": "center"
+    },
+    "textColor": "WT",
+    "bgTreatment": {
+      "type": "gradient",
+      "direction": "dark",
+      "stops": [
+        {
+          "position": 0,
+          "opacity": 0.6
+        },
+        {
+          "position": 60,
+          "opacity": 0.3
+        },
+        {
+          "position": 100,
+          "opacity": 0
+        }
+      ]
+    },
+    "imageType": "VECTOR-UI"
+  },
+  {
+    "id": "variant-2",
+    "label": "스마트 AI 라이프",
+    "titleLine1": "요즘 대세 AI,",
+    "titleLine2": "고민 없이 다 써봐요",
+    "subLine1": "ChatGPT 외 30종 무료",
+    "subLine2": "현대카드 전용 혜택",
+    "imageUrl": "",
+    "imageConstraint": {
+      "fit": "cover",
+      "alignX": "center",
+      "alignY": "center"
+    },
+    "textColor": "WT",
+    "bgTreatment": {
+      "type": "gradient",
+      "direction": "dark",
+      "stops": [
+        {
+          "position": 0,
+          "opacity": 0.6
+        },
+        {
+          "position": 60,
+          "opacity": 0.3
+        },
+        {
+          "position": 100,
+          "opacity": 0
+        }
+      ]
+    },
+    "imageType": "VECTOR-UI"
+  },
+  {
+    "id": "variant-3",
+    "label": "30+ AI 통합",
+    "titleLine1": "월 5천원으로",
+    "titleLine2": "생산성 2배로 올려봐요",
+    "subLine1": "ChatGPT 포함 30여 종",
+    "subLine2": "지금 신청하면 할인",
+    "imageUrl": "",
+    "imageConstraint": {
+      "fit": "cover",
+      "alignX": "center",
+      "alignY": "center"
+    },
+    "textColor": "WT",
+    "bgTreatment": {
+      "type": "gradient",
+      "direction": "dark",
+      "stops": [
+        {
+          "position": 0,
+          "opacity": 0.6
+        },
+        {
+          "position": 60,
+          "opacity": 0.3
+        },
+        {
+          "position": 100,
+          "opacity": 0
+        }
+      ]
+    },
+    "imageType": "VECTOR-UI"
+  }
+]

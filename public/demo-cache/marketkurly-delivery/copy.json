@@ -1,0 +1,104 @@
+[
+  {
+    "id": "variant-1",
+    "label": "마켓컬리 신규 회원",
+    "titleLine1": "아직도 배송비 내세요?",
+    "titleLine2": "첫 주문 무료배송 받기",
+    "subLine1": "컬리 베스트 상품도 무료로",
+    "subLine2": "지금 바로 시작해 보세요",
+    "imageUrl": "",
+    "imageConstraint": {
+      "fit": "cover",
+      "alignX": "center",
+      "alignY": "center"
+    },
+    "textColor": "WT",
+    "bgTreatment": {
+      "type": "gradient",
+      "direction": "dark",
+      "stops": [
+        {
+          "position": 0,
+          "opacity": 0.6
+        },
+        {
+          "position": 60,
+          "opacity": 0.3
+        },
+        {
+          "position": 100,
+          "opacity": 0
+        }
+      ]
+    },
+    "imageType": "PRODUCTFOCUSED"
+  },
+  {
+    "id": "variant-2",
+    "label": "컬리 첫 구매 혜택",
+    "titleLine1": "오늘 저녁 메뉴 고민될 때",
+    "titleLine2": "첫 주문 무료배송 시작하기",
+    "subLine1": "신선함이 집 앞까지 배송",
+    "subLine2": "지금 바로 주문해 보세요",
+    "imageUrl": "",
+    "imageConstraint": {
+      "fit": "cover",
+      "alignX": "center",
+      "alignY": "center"
+    },
+    "textColor": "WT",
+    "bgTreatment": {
+      "type": "gradient",
+      "direction": "dark",
+      "stops": [
+        {
+          "position": 0,
+          "opacity": 0.6
+        },
+        {
+          "position": 60,
+          "opacity": 0.3
+        },
+        {
+          "position": 100,
+          "opacity": 0
+        }
+      ]
+    },
+    "imageType": "HUMAN"
+  },
+  {
+    "id": "variant-3",
+    "label": "마켓컬리 특별 혜택",
+    "titleLine1": "0원으로 누리는 새벽배송",
+    "titleLine2": "첫 주문 배송비는 무료로",
+    "subLine1": "프리미엄 신선식품을 집으로",
+    "subLine2": "지금 바로 주문하세요",
+    "imageUrl": "",
+    "imageConstraint": {
+      "fit": "cover",
+      "alignX": "center",
+      "alignY": "center"
+    },
+    "textColor": "WT",
+    "bgTreatment": {
+      "type": "gradient",
+      "direction": "dark",
+      "stops": [
+        {
+          "position": 0,
+          "opacity": 0.6
+        },
+        {
+          "position": 60,
+          "opacity": 0.3
+        },
+        {
+          "position": 100,
+          "opacity": 0
+        }
+      ]
+    },
+    "imageType": "PRODUCTFOCUSED"
+  }
+]

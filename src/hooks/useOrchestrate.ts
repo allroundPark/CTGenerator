@@ -22,6 +22,13 @@ import {
   type ExtractAction,
 } from "@/lib/orchestrate";
 import { matchDemoScenario, loadDemoCache } from "@/lib/demoCache";
+import {
+  findDemoScenario,
+  fetchDemoCopy,
+  sleep as demoSleep,
+  type DemoScenario,
+} from "@/lib/demoMode";
+import { useDemoMode } from "./useDemoMode";
 import { getKnownBrandContext } from "@/lib/imagePrompt";
 import { supabase } from "@/lib/supabase";
 import { getDeviceId } from "@/lib/deviceId";
@@ -30,6 +37,7 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
   // ── 내부 훅 ──
   const chat = useChatMessages();
   const pools = useCardPools();
+  const isDemoMode = useDemoMode();
 
   // ── Orchestrate 상태 ──
   const [contentSpec, setContentSpec] = useState<ContentSpec>({ ...EMPTY_SPEC });
@@ -671,6 +679,54 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
     }
   };
 
+  // ── 데모 모드 재생기 ──
+  const playDemoSteps = async (scenario: DemoScenario) => {
+    console.log("[demo] play scenario:", scenario.id);
+    if (scenario.setSpec) {
+      setContentSpec((prev) => ({ ...prev, ...scenario.setSpec }));
+    }
+    const statusId = chat.addMessage({
+      role: "assistant",
+      content: "...",
+      type: "status",
+    });
+    for (const step of scenario.steps) {
+      if (step.delayMs > 0) await demoSleep(step.delayMs);
+      if (step.type === "status") {
+        chat.updateMessage(statusId, { content: step.message, type: "status" });
+      } else if (step.type === "options") {
+        chat.updateMessage(statusId, {
+          type: "options",
+          content: step.prompt,
+          options: step.options,
+        });
+      } else if (step.type === "copy") {
+        const variants = await fetchDemoCopy(step.copyUrl);
+        console.log("[demo] copy: appending", variants.length, "variants");
+        if (variants.length > 0) {
+          pools.appendToPool(variants);
+        }
+        chat.updateMessage(statusId, { content: "문구 완성! 이미지 만드는 중...", type: "status" });
+      } else if (step.type === "images") {
+        const variants = step.copyUrl ? await fetchDemoCopy(step.copyUrl) : [];
+        const STYLE_MAP: Array<"realistic" | "3d" | "2d"> = ["realistic", "3d", "2d"];
+        for (let i = 0; i < step.imageUrls.length; i++) {
+          const url = step.imageUrls[i];
+          const v = variants[i] || variants[0];
+          console.log(`[demo] addImage[${i}] url=${url} textColor=${v?.textColor} bgType=${v?.bgTreatment?.type}`);
+          pools.addImageToPool(url, v?.textColor, v?.bgTreatment, {
+            generationPrompt: scenario.id,
+            generationStyle: STYLE_MAP[i] || "realistic",
+            generationVariation: i,
+          });
+          // 각 이미지를 별개 렌더 사이클로 분리 + 시각적 진행감
+          await demoSleep(1500);
+        }
+        chat.updateMessage(statusId, { content: step.finalMessage, type: "text" });
+      }
+    }
+  };
+
   // ── handleMessage: LLM 통합 라우터 ──
   // Claude Code 방식: LLM이 의도 판단 → 바로 실행. 질문은 최후의 수단.
   const handleMessage = async (
@@ -692,6 +748,25 @@ export function useOrchestrate(apiFetch: (url: string, init?: RequestInit) => Pr
     if (effectiveImages && !images) lastAttachedImagesRef.current = null;
 
     console.log(`[handleMessage] text="${text}", hasImages=${!!images}, effectiveImages=${!!effectiveImages}, hasContent=${pools.hasContent}`);
+
+    // 데모 모드: 매칭되는 시나리오면 캐시 응답으로 우회.
+    // 매칭 안 되면 안내 메시지로 종료 — 실 LLM/네트워크 호출 차단 (시연 안정성).
+    if (isDemoMode) {
+      const scenario = findDemoScenario(text, {
+        hasPool: pools.hasContent,
+        hasAttached: !!effectiveImages,
+        brand: contentSpec.brand ?? undefined,
+      });
+      if (scenario) {
+        await playDemoSteps(scenario);
+        return;
+      }
+      chat.addMessage({
+        role: "assistant",
+        content: "이 입력은 운영 환경에서 처리되는 영역입니다 (개발·보완 예정).",
+      });
+      return;
+    }
 
     // 이미 카드 있으면 수정 모드 → handleSend가 handleModification 호출
     if (pools.hasContent) {

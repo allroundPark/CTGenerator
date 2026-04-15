@@ -1,5 +1,7 @@
 // 이미지 생성 프롬프트 빌더: imageType → 프리셋 선택 → 구조화 영문 프롬프트
 
+import type { BrandContext } from "@/types/ct";
+
 // 브랜드 knowledge DB
 interface BrandKnowledge {
   primary: string;
@@ -64,11 +66,7 @@ export function isKnownBrand(text: string): boolean {
 }
 
 /** 등록 브랜드의 knowledge를 BrandContext 형태로 반환 */
-export function getKnownBrandContext(text: string): {
-  brandName: string; description: string; category: string;
-  targetAudience: string; serviceCharacteristics: string;
-  primaryColor: string; secondaryColor: string | null;
-} | null {
+export function getKnownBrandContext(text: string): BrandContext | null {
   const brand = detectBrandName(text);
   if (!brand || !BRAND_DB[brand]) return null;
   const b = BRAND_DB[brand];
@@ -80,6 +78,9 @@ export function getKnownBrandContext(text: string): {
     serviceCharacteristics: b.serviceCharacteristics,
     primaryColor: b.primary,
     secondaryColor: b.secondary,
+    mascotName: null,
+    mascotDescription: null,
+    mascotImage: null,
   };
 }
 
@@ -148,15 +149,25 @@ const STYLE_PRESETS_MAP: Record<string, StylePreset> = {
   },
 
   STYLE_2D: {
-    style: "Modern flat vector illustration, editorial graphic design, Figma/Dribbble quality. Clean geometric shapes with intentional color blocking and bold composition.",
-    camera_angle: "Front-facing flat perspective, no depth or 3D effect, graphic poster composition",
-    lighting: "No realistic lighting — flat colors with optional subtle shadows for visual hierarchy only",
+    style: "Limited-palette editorial illustration in the spirit of Tom Haugomat — silkscreen / risograph aesthetic with mid-century American illustration heritage (1950s-60s). Matte gouache and acrylic finish with visible paper grain and slight ink misregistration on edges. Cinematic narrative storytelling through flat color blocks. NOT vector-clean, NOT 3D, NOT photoreal, NOT cartoon, NOT digital-glossy.",
+    camera_angle: "Cinematic wide framing OR slightly elevated isometric cross-section. Layered planes — silhouetted foreground (foliage / branches / window frames) frames the middle-ground subject; distant background as a single flat color field. Human figures (if any) are small and incidental — environment dominates.",
+    lighting: "Single strong directional light source — sunset, sunrise, moonlight, window light, headlights, or candle. Light visualized as a hard-edged FLAT SHAPE (a beam, a band, a pool), NOT a gradient. Shadows are sharp-edged flat color blocks, one or two tones darker than the base. NO soft gradients, NO realistic shading, NO ambient occlusion.",
     color_palette: {
-      primary: ["{BRAND_PRIMARY}", "white", "light neutral"],
-      accents: ["{BRAND_SECONDARY}", "complementary pastel"],
+      primary: ["{BRAND_PRIMARY} — this is the BRAND SIGNATURE color and MUST be the most visually identifiable color in the image (used either as a large dominant surface like sky/wall/background field, OR as the single bold spot accent on a key central object — choose whichever fits the brand color's value: dark brand colors → use as dominant background field; vivid/saturated brand colors → use as the bold spot accent)", "deep midnight navy or charcoal (for shadow blocks)", "warm cream or ivory (for highlight surfaces)"],
+      accents: ["{BRAND_SECONDARY}", "ONE supporting muted vintage color from: salmon coral / mustard ochre / sage olive — desaturated, NEVER neon"],
     },
-    atmosphere: "Modern, minimal, clean, editorial illustration, trendy, bold",
-    constraints: ["No text or typography", "No realistic photography", "No 3D effects", "Pure flat vector art", "Bold shapes, limited color palette, intentional negative space"],
+    atmosphere: "Quiet, contemplative, nostalgic, cinematic, time-suspended — the feeling of a still from a 1960s film or a vintage silkscreen travel poster. The brand color is the visual identity anchor of the entire composition.",
+    constraints: [
+      "BRAND COLOR PRIORITY: {BRAND_PRIMARY} must be instantly recognizable as the dominant color identity of this image. A viewer should think 'this is a brand-X piece' from the color alone.",
+      "Strict 4–6 color limit total — matte and slightly desaturated, vintage editorial palette",
+      "Visible paper grain and subtle ink texture across all color fields",
+      "Flat color blocks with HARD edges — absolutely NO soft gradients, NO smooth shading, NO blur",
+      "Silhouetted foreground framing element (foliage, branch, doorway, window mullion) preferred",
+      "Faceless or near-faceless figures, small in frame — environment dominates over subject",
+      "Single strong directional light, dramatic time-of-day mood (golden hour / blue hour / night)",
+      "ABSOLUTELY ZERO text, letters, numbers, words, or characters anywhere in the image — NO shop signs, NO storefront names, NO banners, NO packaging text, NO posters with text, NO street signs, NO logos, NO watermarks, NO English words, NO Korean words, NO foreign script. The output is purely pictorial illustration with zero typography of any kind. Do NOT invent text into the scene.",
+      "NO 3D rendering, NO photorealism, NO glossy digital finish",
+    ],
   },
 };
 

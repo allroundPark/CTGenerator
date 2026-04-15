@@ -156,33 +156,17 @@ export function useCardPools() {
     setSelImage(0);
   }, []);
 
-  // 스와이프
+  // 스와이프 — setSelXxx를 setXxxPool updater 안에서 호출하면
+  // Strict Mode가 outer updater를 두 번 실행해서 selXxx가 2씩 증가하는 버그가 있음.
+  // 따라서 pool length를 deps에 넣어 직접 호출.
   const handleSwipe = useCallback(
     (zone: "copy" | "image" | "sub", direction: 1 | -1) => {
-      if (zone === "copy") {
-        setCopyPool((pool) => {
-          setSelCopy((prev) =>
-            Math.max(0, Math.min(pool.length - 1, prev + direction)),
-          );
-          return pool;
-        });
-      } else if (zone === "image") {
-        setImagePool((pool) => {
-          setSelImage((prev) =>
-            Math.max(0, Math.min(pool.length - 1, prev + direction)),
-          );
-          return pool;
-        });
-      } else {
-        setSubPool((pool) => {
-          setSelSub((prev) =>
-            Math.max(0, Math.min(pool.length - 1, prev + direction)),
-          );
-          return pool;
-        });
-      }
+      const max =
+        (zone === "copy" ? copyPool.length : zone === "image" ? imagePool.length : subPool.length) - 1;
+      const setter = zone === "copy" ? setSelCopy : zone === "image" ? setSelImage : setSelSub;
+      setter((prev) => Math.max(0, Math.min(max, prev + direction)));
     },
-    [],
+    [copyPool.length, imagePool.length, subPool.length],
   );
 
   // 필드 직접 수정
