@@ -13,15 +13,11 @@ import { getDeviceId } from "@/lib/deviceId";
 import { useOrchestrate } from "@/hooks/useOrchestrate";
 
 export default function Home() {
-  // ── 데모 모드: URL에 ?demo=1 이면 bg를 슬라이드 톤(라이트)에 맞춤 ──
+  // ── 데모 모드: URL에 ?demo=1 이면 외곽 bg를 슬라이드 톤(#F5F2ED)으로 ──
   const [isDemoView, setIsDemoView] = useState(false);
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const demo = new URLSearchParams(window.location.search).get("demo") === "1";
-    setIsDemoView(demo);
-    if (demo) {
-      document.body.style.background = "#F5F2ED";
-    }
+    setIsDemoView(new URLSearchParams(window.location.search).get("demo") === "1");
   }, []);
 
   // ── API 키 상태 ──
@@ -281,7 +277,10 @@ export default function Home() {
   }
 
   return (
-    <div className="h-[100dvh] flex items-center justify-center bg-ds-base">
+    <div
+      className="h-[100dvh] flex items-center justify-center bg-ds-base"
+      style={isDemoView ? { background: "#F5F2ED" } : undefined}
+    >
       <div className="w-full h-full sm:max-w-[430px] sm:max-h-[932px] flex flex-col bg-ds-base overflow-hidden sm:shadow-2xl sm:rounded-[2rem] sm:border sm:border-gray-700 relative">
 
         {/* API 키 변경 버튼 */}
