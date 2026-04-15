@@ -1116,6 +1116,7 @@
     .built-step-item.compact .built-step-text p {
       font-size: calc(21px * var(--font-scale)) !important;
       line-height: 1.55 !important;
+      white-space: pre-line !important;
     }
     .slide-built .hero-quote { font-size: calc(42px * var(--font-scale)) !important; line-height: 1.25 !important; }
     .slide-built .hero-sub { font-size: calc(20px * var(--font-scale)) !important; margin-bottom: 0 !important; }
@@ -1421,7 +1422,7 @@
             + '<div class="built-step-content">'
             + '<div class="built-step-text">'
             + '<h3>' + esc(f.heading) + '</h3>'
-            + '<p>' + esc(f.body) + '</p>'
+            + '<p>' + esc(f.body).replace(/\n/g, '<br>') + '</p>'
             + '</div></div></div>';
         }).join('');
         var builtQuoteHtml = esc(d.built.quote).replace(/\n/g, '<br>');
