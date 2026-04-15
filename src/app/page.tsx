@@ -279,7 +279,7 @@ export default function Home() {
   return (
     <div
       className="h-[100dvh] flex items-center justify-center bg-ds-base"
-      style={isDemoView ? { background: "#F5F2ED" } : undefined}
+      style={isDemoView ? { background: "#F5F2ED", border: 0 } : undefined}
     >
       <div
         className={`w-full h-full sm:max-w-[430px] sm:max-h-[932px] flex flex-col bg-ds-base overflow-hidden relative ${isDemoView ? "" : "sm:shadow-2xl sm:rounded-[2rem] sm:border sm:border-gray-700"}`}

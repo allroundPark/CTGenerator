@@ -10,13 +10,15 @@ const SLIDE_DATA = {
     variant: 'hero',
     title: "C/T 카드 제작 도구",
     subtitle: "현업이 직접 대화로 만들고,\n실제 앱 룩앤필까지 바로 확인",
-    members: "Product1팀 윤성호, Product2팀 박주형"
+    members: "Product1팀 윤성호, Product2팀 박주형",
+    image: "cover-preview.png",
+    imageAlt: "C/T 카드 제작 도구 미리보기"
   },
 
   problem: {
     title: "한 장을 위해 너무 많이 움직인다",
     cards: [
-      { num: "01", heading: "현업 → 앱까지 프로세스가 길다", body: "현업이 엑셀 제작 → 인픽스 디자인 요청\n→ 자사 디자이너 검토 → CMS 등록\n→ 하루 뒤 앱에서 현업이 확인\n\n여러 조직을 거치느라 카드 하나도 일 단위가 걸려요." },
+      { num: "01", heading: "현업 → 앱까지 프로세스가 길다", body: "현업이 엑셀 제작 → 인픽스 디자인 요청\n→ C/T 담당 디자이너 검토 → CMS 등록\n→ 하루 뒤 앱에서 현업이 확인\n\n여러 조직을 거치느라 카드 하나도 일 단위가 걸려요." },
       { num: "02", heading: "디자인 제작 구조상 비용이 매년 발생", body: "지금 디자인 제작은 인픽스에서 진행하는 구조로,\n컨텐츠 디자인에 대한 비용이 매년 발생하고 있어요." }
     ]
   },
@@ -25,8 +27,8 @@ const SLIDE_DATA = {
     variant: 'steps',
     demoUrl: '/?demo=1',
     quote: "우리의 접근",
-    quoteHighlight: "현업 손에서 끝나는\nC/T 카드 제작",
-    sub: "디자이너 의뢰도, 공간 이동도 없이.",
+    quoteHighlight: "완성도 높은 C/T 카드 초안을\n현업 손에서 직접 제작",
+    sub: "최종 검수는 C/T 담당 디자이너가 맡습니다.",
     features: [
       { icon: "bolt",  heading: "AI가 문구·이미지 생성", body: "문구는 Gemini 2.5 Flash,\n이미지는 나노바나나2(Gemini 3.1 Flash Image)로\n브랜드 톤에 맞춰 자동 생성" },
       { icon: "link",  heading: "공간 이동 없이 개인 디바이스로", body: "인터넷·업무 공간을 오갈 필요 없이,\n현업이 쓰는 디바이스 하나로 콘텐츠 제작 완결" },
@@ -41,14 +43,14 @@ const SLIDE_DATA = {
     before: {
       count: 6, suffix: "단계",
       desc: "여러 조직을 거쳐 일 단위 소요",
-      items: ["현업 엑셀 제작 → 인픽스 디자인 요청", "자사 디자이너 검토 → CMS 업로드", "다음날 앱 확인 → 수정 루프"]
+      items: ["현업 엑셀 제작 → 인픽스 디자인 요청", "C/T 담당 디자이너 검토 → CMS 업로드", "다음날 앱 확인 → 수정 루프"]
     },
     after: {
       count: 2, suffix: "단계",
       desc: "현업이 초안 작성 후 검수",
       items: [
-        "초안: 브랜드·소재 입력 → 문구·이미지 자동 생성 → Mix & Match로 완성",
-        "검수: 앱 목업에서 룩앤필 확인 → WebP 다운로드 후 회사 메일 발송"
+        "현업이 완성도 높은 초안 제작",
+        "C/T 담당 디자이너 검수 후 반영"
       ]
     }
   },

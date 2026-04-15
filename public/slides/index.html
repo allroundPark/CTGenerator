@@ -919,6 +919,9 @@
        레퍼런스 템플릿과 시각적 차별화
        ==================================================== */
 
+    /* 상단 프로그레스 바 제거 */
+    .progress-bar { display: none !important; }
+
     /* 애니메이션 제거 — 레퍼런스와 차별화 */
     .animate, .animate.delay-1, .animate.delay-2, .animate.delay-3,
     .animate.delay-4, .animate.delay-5, .animate.delay-6,
@@ -980,6 +983,39 @@
 
     /* 빈 cover-label 숨김 */
     .cover-label:empty { display: none; }
+
+    /* Cover with image: 좌 텍스트 / 우 이미지 */
+    .slide-cover.has-image {
+      flex-direction: row !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      gap: 60px !important;
+      padding: 60px 120px !important;
+      text-align: left !important;
+    }
+    .slide-cover.has-image .cover-text {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    .slide-cover.has-image .cover-image-wrap {
+      flex-shrink: 0;
+      height: 100%;
+      max-height: 840px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .slide-cover.has-image .cover-image-wrap img {
+      max-height: 100%;
+      max-width: 100%;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      border-radius: 36px;
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.22), 0 6px 18px rgba(0, 0, 0, 0.12);
+      clip-path: inset(2px 0 0 0 round 36px);
+    }
 
     /* Cover: hero variant — 왼쪽 정렬 + 가이드 라인 */
     .slide-cover {
@@ -1068,21 +1104,26 @@
       border-bottom: none !important;
     }
     .built-step-item.compact .built-step-num {
-      font-size: calc(30px * var(--font-scale)) !important;
+      font-size: calc(38px * var(--font-scale)) !important;
       color: var(--accent-secondary) !important;
       opacity: 0.5 !important;
     }
     .built-step-item.compact .built-step-text h3 {
-      font-size: calc(22px * var(--font-scale)) !important;
-      margin-bottom: 4px !important;
+      font-size: calc(28px * var(--font-scale)) !important;
+      margin-bottom: 6px !important;
     }
     .built-step-item.compact .built-step-text p {
-      font-size: calc(17px * var(--font-scale)) !important;
-      line-height: 1.5 !important;
+      font-size: calc(21px * var(--font-scale)) !important;
+      line-height: 1.55 !important;
     }
     .slide-built .hero-quote { font-size: calc(42px * var(--font-scale)) !important; line-height: 1.25 !important; }
     .slide-built .hero-sub { font-size: calc(20px * var(--font-scale)) !important; margin-bottom: 0 !important; }
     .built-demo-pane iframe { min-height: 100%; }
+
+    /* BA bullet 정렬: 긴 텍스트에서 첫 줄과 맞춤 */
+    .ba-item { align-items: flex-start !important; gap: 14px !important; }
+    .ba-dot { margin-top: 13px !important; }
+    .ba-list { gap: 18px !important; }
 
     /* BA: 그라디언트 제거, 숫자 크기 축소 */
     .theme-dark .slide-ba { background: var(--bg) !important; }
@@ -1242,11 +1283,17 @@
         return t;
       });
 
-      html += '<section class="slide slide-cover" data-type="cover" aria-label="표지">'
+      var coverImageHtml = d.cover.image
+        ? '<div class="cover-image-wrap"><img src="' + esc(d.cover.image) + '" alt="' + esc(d.cover.imageAlt || '') + '" /></div>'
+        : '';
+      html += '<section class="slide slide-cover ' + (d.cover.image ? 'has-image' : '') + '" data-type="cover" aria-label="표지">'
+        + '<div class="cover-text">'
         + '<p class="cover-label animate">' + esc(d.meta.session) + '</p>'
         + '<h1 class="cover-title animate delay-1">' + esc(d.cover.title) + '</h1>'
         + '<p class="cover-desc animate delay-2">' + esc(d.cover.subtitle) + '</p>'
         + '<p class="cover-members animate delay-3">' + memberParts.join(', ') + '</p>'
+        + '</div>'
+        + coverImageHtml
         + '</section>';
       html += renderExtraItems('after-cover', d.extra);
 
@@ -1388,7 +1435,7 @@
           + '<div class="built-steps-wrap" style="display:flex;flex-direction:column;gap:14px;">' + stepsHtml + '</div>'
           + '</div>'
           + '<div class="built-demo-pane animate delay-2" style="flex:1;display:flex;align-items:center;justify-content:center;background:transparent;overflow:hidden;position:relative;">'
-          + '<iframe src="' + esc(demoUrl) + '" title="Live Demo" loading="lazy" style="width:100%;height:100%;border:none;background:var(--bg);" allow="clipboard-write"></iframe>'
+          + '<iframe src="' + esc(demoUrl) + '" title="Live Demo" loading="lazy" style="width:100%;height:100%;border:0;outline:none;display:block;background:transparent;" allow="clipboard-write"></iframe>'
           + '</div>'
           + '</section>';
       } else {
@@ -1642,11 +1689,13 @@
           + '</section>';
       }
 
-      // ── 10. Q&A ───────────────────────────────────────────────
-      html += '<section class="slide slide-qa" data-type="qa" aria-label="Q&A">'
-        + '<h1 class="qa-title animate delay-1">Q&A</h1>'
-        + '<p class="qa-thanks animate delay-3">감사합니다</p>'
-        + '</section>';
+      // ── 10. Q&A ── (d.qa !== false 일 때만)
+      if (d.qa !== false) {
+        html += '<section class="slide slide-qa" data-type="qa" aria-label="Q&A">'
+          + '<h1 class="qa-title animate delay-1">Q&A</h1>'
+          + '<p class="qa-thanks animate delay-3">감사합니다</p>'
+          + '</section>';
+      }
 
       wrapper.innerHTML = html;
 
@@ -1686,13 +1735,7 @@
     // 슬라이드 시스템 초기화
     function initSlides() {
       var slides = document.querySelectorAll('.slide');
-      var d2 = SLIDE_DATA;
-      var totalSlides = 3  // cover + problem + built
-        + (d2.how ? 1 : 0)
-        + (d2.ba ? 1 : 0)
-        + (d2.next ? 1 : 0)  // merged reality+next
-        + (d2.extra ? d2.extra.length : 0)
-        + 2; // closing + Q&A
+      var totalSlides = slides.length;
       var currentSlide = 0;
 
       // BA 슬라이드 인덱스를 동적으로 탐색
@@ -1767,20 +1810,14 @@
 
     // 숫자 카운터 애니메이션
     function animateCounters() {
+      // 숫자 카운트업 애니메이션 비활성화 — 최종값 즉시 표시
       document.querySelectorAll('[data-count]').forEach(function(el) {
         if (el.dataset.counted) return;
         el.dataset.counted = '1';
         var target = parseFloat(el.dataset.count);
         var suffix = el.dataset.suffix || '';
         var prefix = el.dataset.prefix || '';
-        var start = performance.now();
-        var duration = 1200;
-        (function tick(now) {
-          var p = Math.min((now - start) / duration, 1);
-          var eased = 1 - Math.pow(1 - p, 3);
-          el.textContent = prefix + Math.round(target * eased) + suffix;
-          if (p < 1) requestAnimationFrame(tick);
-        })(start);
+        el.textContent = prefix + target + suffix;
       });
     }
 

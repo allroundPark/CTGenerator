@@ -46,7 +46,7 @@ export default function DeviceViewer({ content, onFieldClick, onImageDrag, onTog
           width: displayWidth,
           height: displayHeight,
           borderRadius: crop < 1 ? `${40 * displayScale}px ${40 * displayScale}px 0 0` : `${40 * displayScale}px`,
-          boxShadow: "0 8px 40px rgba(0, 0, 0, 0.12), 0 2px 12px rgba(0, 0, 0, 0.08)",
+          boxShadow: "0 24px 64px rgba(0, 0, 0, 0.22), 0 6px 18px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.08)",
           ...(crop < 1 ? {} : {}),
         }}
       >
