@@ -281,7 +281,10 @@ export default function Home() {
       className="h-[100dvh] flex items-center justify-center bg-ds-base"
       style={isDemoView ? { background: "#F5F2ED" } : undefined}
     >
-      <div className="w-full h-full sm:max-w-[430px] sm:max-h-[932px] flex flex-col bg-ds-base overflow-hidden sm:shadow-2xl sm:rounded-[2rem] sm:border sm:border-gray-700 relative">
+      <div
+        className={`w-full h-full sm:max-w-[430px] sm:max-h-[932px] flex flex-col bg-ds-base overflow-hidden relative ${isDemoView ? "" : "sm:shadow-2xl sm:rounded-[2rem] sm:border sm:border-gray-700"}`}
+        style={isDemoView ? { background: "#F5F2ED" } : undefined}
+      >
 
         {/* API 키 변경 버튼 */}
         <button
