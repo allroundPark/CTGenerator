@@ -13,6 +13,13 @@ import { getDeviceId } from "@/lib/deviceId";
 import { useOrchestrate } from "@/hooks/useOrchestrate";
 
 export default function Home() {
+  // ── 데모 모드: URL에 ?demo=1 이면 bg를 슬라이드 톤에 맞춰 플랫 처리 ──
+  const [isDemoView, setIsDemoView] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setIsDemoView(new URLSearchParams(window.location.search).get("demo") === "1");
+  }, []);
+
   // ── API 키 상태 ──
   const [apiKeyReady, setApiKeyReady] = useState<boolean | null>(null);
   const apiKeyRef = useRef<string | null>(null);
@@ -414,7 +421,9 @@ export default function Home() {
             borderRadius: "15px 15px 0 0",
             paddingBottom: "env(safe-area-inset-bottom)",
             transition: sheetSnapping ? "height 0.25s ease-out" : "none",
-            background: "linear-gradient(to bottom, #242220 0%, #242220 70%, #1A1816 100%)",
+            background: isDemoView
+              ? "#1A1816"
+              : "linear-gradient(to bottom, #242220 0%, #242220 70%, #1A1816 100%)",
           }}
         >
           {/* 드래그 핸들 */}
