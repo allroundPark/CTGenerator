@@ -132,14 +132,21 @@ function finishMulti(
   imgErrors: string[],
 ): DispatchResult {
   const { chat, showStatus } = deps;
-  const failDetail = added === 0 && imgErrors.length > 0 ? ` (${imgErrors[0]})` : "";
   showStatus(added > 0 ? "이미지 수정 완료!" : "");
-  chat.addMessage({
-    role: "assistant",
-    content:
-      added > 0
-        ? "이미지 수정안을 만들었어요! 스와이프해서 비교해보세요."
-        : `이미지 수정에 실패했어요.${failDetail}`,
-  });
+
+  let content: string;
+  if (added === 0) {
+    const detail = imgErrors.length > 0 ? ` (${imgErrors[0]})` : "";
+    content = `이미지 수정에 실패했어요.${detail}`;
+  } else if (added < 3) {
+    // 일부만 성공 — 어떤 variation이 왜 실패했는지 보여주기
+    const failed = 3 - added;
+    const detail = imgErrors.length > 0 ? ` (${imgErrors[0]})` : "";
+    content = `${added}장 완성! (${failed}장 실패${detail}) 스와이프해서 비교해보세요. 다시 시도하려면 "한번 더"라고 말씀해주세요.`;
+  } else {
+    content = "이미지 수정안을 만들었어요! 스와이프해서 비교해보세요.";
+  }
+
+  chat.addMessage({ role: "assistant", content });
   return { ok: added > 0 };
 }

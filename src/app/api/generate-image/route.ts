@@ -140,6 +140,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "prompt is required" }, { status: 400 });
   }
 
+  // 진단용: 어느 mode/variation 호출인지 한 줄 (Vercel 로그에서 부분 실패 추적)
+  const mode = edit ? "edit" : enhance ? "enhance" : "default";
+  const reqId = Math.random().toString(36).slice(2, 7);
+  console.log(`[image-gen][${reqId}] start mode=${mode} variation=${variation ?? 0} hasRefs=${!!(referenceImages?.length)}`);
+
   // 클라이언트 disconnect 시 Gemini 요청도 abort하기 위한 signal
   const clientSignal = req.signal;
 
@@ -393,8 +398,9 @@ Restore smooth gradients, clean edges, accurate colors. Do not preserve any of t
   }
 
   if (!step1Image) {
+    console.error(`[image-gen][${reqId}] FAIL all models, mode=${mode} variation=${variation ?? 0}`);
     return NextResponse.json(
-      { error: "모든 이미지 생성 모델이 실패했습니다. 이미지를 직접 첨부해주세요." },
+      { error: `이미지 생성 실패 (mode=${mode}, variation=${variation ?? 0}). 두 모델 모두 응답에 이미지가 없었어요.` },
       { status: 502 }
     );
   }

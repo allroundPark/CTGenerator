@@ -234,18 +234,24 @@ async function runAttachedApply(
     attached_images_count: 1,
   });
 
-  const enhanceFailDetail = generatedCount === 0 && imgErrors.length > 0 ? ` (${imgErrors[0]})` : "";
-  showStatus(
-    generatedCount > 0
-      ? `이미지 ${generatedCount}장 보정 완료! 각 영역을 넘기면서 조합해보세요.`
-      : `문구는 완성! 이미지 보정에 실패했어요.${enhanceFailDetail}`,
-  );
+  const enhanceFailDetail = imgErrors.length > 0 ? ` (${imgErrors[0]})` : "";
+  let enhanceStatus: string;
+  let enhanceChat: string;
+  if (generatedCount === 0) {
+    enhanceStatus = `문구는 완성! 이미지 보정에 실패했어요.${enhanceFailDetail}`;
+    enhanceChat = "문구를 만들었어요! 이미지를 첨부하거나 요청해보세요.";
+  } else if (generatedCount < 3) {
+    const failed = 3 - generatedCount;
+    enhanceStatus = `이미지 ${generatedCount}장 보정 완료 (${failed}장 실패)`;
+    enhanceChat = `${generatedCount}장 완성! (${failed}장 실패${enhanceFailDetail}) 다시 받고 싶으면 "한번 더"라고 말씀해주세요.`;
+  } else {
+    enhanceStatus = `이미지 ${generatedCount}장 보정 완료! 각 영역을 넘기면서 조합해보세요.`;
+    enhanceChat = "완성! 이상한 거 있으면 추가 요청해주세요.";
+  }
+  showStatus(enhanceStatus);
   chat.addMessage({
     role: "assistant",
-    content:
-      generatedCount > 0
-        ? "완성! 이상한 거 있으면 추가 요청해주세요."
-        : "문구를 만들었어요! 이미지를 첨부하거나 요청해보세요.",
+    content: enhanceChat,
     showReport: generatedCount > 0,
   });
   return { ok: generatedCount > 0 };
@@ -318,13 +324,19 @@ async function runAttachedEdit(
 
     await editPromise;
 
-    const failDetail = editCount === 0 && imgErrors.length > 0 ? ` (${imgErrors[0]})` : "";
+    const failDetail = imgErrors.length > 0 ? ` (${imgErrors[0]})` : "";
+    let editChatMsg: string;
+    if (editCount === 0) {
+      editChatMsg = `문구는 완성! 이미지 수정에 실패했어요.${failDetail}`;
+    } else if (editCount < 3) {
+      const failed = 3 - editCount;
+      editChatMsg = `이미지 ${editCount}안 완성! (${failed}장 실패${failDetail}) 다시 받고 싶으면 "한번 더"라고 말씀해주세요.`;
+    } else {
+      editChatMsg = `이미지 ${editCount}안을 만들었어요! 스와이프해서 비교해보세요.`;
+    }
     chat.addMessage({
       role: "assistant",
-      content:
-        editCount > 0
-          ? `이미지 ${editCount}안을 만들었어요! 스와이프해서 비교해보세요.`
-          : `문구는 완성! 이미지 수정에 실패했어요.${failDetail}`,
+      content: editChatMsg,
       showReport: editCount > 0,
     });
     return { ok: editCount > 0 };
@@ -528,18 +540,26 @@ function reportCompletion(
   imgErrors: string[],
 ) {
   const { chat, showStatus } = deps;
-  const failDetail = generatedCount === 0 && imgErrors.length > 0 ? ` (${imgErrors[0]})` : "";
-  showStatus(
-    generatedCount > 0
-      ? `완성! 각 영역을 넘기면서 조합해보세요.`
-      : `문구는 완성! 이미지 생성에 실패했어요.${failDetail}`,
-  );
+  const failDetail = imgErrors.length > 0 ? ` (${imgErrors[0]})` : "";
+
+  let statusMsg: string;
+  let chatMsg: string;
+  if (generatedCount === 0) {
+    statusMsg = `문구는 완성! 이미지 생성에 실패했어요.${failDetail}`;
+    chatMsg = "문구를 만들었어요! 이미지를 첨부하거나 요청해보세요.";
+  } else if (generatedCount < 3) {
+    const failed = 3 - generatedCount;
+    statusMsg = `${generatedCount}장 완성 (${failed}장 실패)`;
+    chatMsg = `${generatedCount}장 완성! (${failed}장 실패${failDetail}) 다시 받고 싶으면 "한번 더"라고 말씀해주세요.`;
+  } else {
+    statusMsg = `완성! 각 영역을 넘기면서 조합해보세요.`;
+    chatMsg = "완성! 이상한 거 있으면 추가 요청해주세요.";
+  }
+
+  showStatus(statusMsg);
   chat.addMessage({
     role: "assistant",
-    content:
-      generatedCount > 0
-        ? "완성! 이상한 거 있으면 추가 요청해주세요."
-        : `문구를 만들었어요! 이미지를 첨부하거나 요청해보세요.`,
+    content: chatMsg,
     showReport: generatedCount > 0,
   });
 }
