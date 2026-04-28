@@ -191,11 +191,12 @@ If input is not square, OUTPAINT (extend background) to make square. NEVER crop.
 DO NOT add any new objects, decorative elements, waveforms, particles, or effects that weren't in the original.`;
     console.log(`[image-gen] edit mode, prompt length=${fullPrompt.length}`);
   } else if (enhance) {
-    // 첨부 이미지 보정 모드 — variation별 살짝 다른 방향
+    // 첨부 이미지 보정 모드 — variation별 명확히 다른 방향
+    // 추상적 hint는 Gemini가 거의 무시함 → 구체적 사진/시네마 용어로 강제.
     const enhanceVariationHints = [
-      "Variation: clean faithful enhancement. Subtle quality boost — sharper edges, cleaner colors, more detail. Composition and framing UNCHANGED. Highest fidelity to input.",
-      "Variation: subject focus emphasis. Same content, but slightly tighter perceptual focus on the main subject — make the focal object feel more prominent (subtly stronger shadow grounding, slightly softer/blurrier background context, more contrast separation between subject and surroundings). Do NOT crop or zoom; achieve focus via lighting and depth cues only.",
-      "Variation: premium refinement. Same subject and composition, but elevate the presentation — softer light falloff, subtly richer mid-tones, slightly deeper shadows, marginally more saturated key colors. Feels expensive and polished. Do NOT add new objects.",
+      "VARIATION 0 — CLEAN & FAITHFUL (최소 변형):\n- Pure enhancement only: sharpness +20%, denoise, restore color accuracy.\n- Composition, depth, lighting, white balance ALL unchanged.\n- Goal: identical scene at noticeably higher quality. Most conservative option.",
+      "VARIATION 1 — SHALLOW DEPTH OF FIELD (포커스 강조):\n- Apply f/2.0 shallow depth-of-field effect.\n- Background MUST be visibly blurrier (gaussian-like bokeh, ~8-15px equivalent blur on far background).\n- Main subject MUST remain pin-sharp with crisp edges.\n- Use this depth separation to make the focal subject visually pop forward.\n- Composition unchanged. Do NOT crop or zoom — achieve focus purely through depth-of-field optics.",
+      "VARIATION 2 — EDITORIAL PREMIUM GRADE (고급 색감):\n- Apply editorial color grading: lift shadows ~15% (subtle dehazing), shift white balance very slightly cooler (~5500K daylight feel).\n- Boost local contrast around the subject specifically to make it pop.\n- Mid-tones slightly richer, highlights gently rolled off (no clipping).\n- Final aesthetic: magazine cover / premium product shot.\n- Subject and composition unchanged. No new objects.",
     ];
     const enhanceHint = enhanceVariationHints[variation ?? 0] || enhanceVariationHints[0];
 
