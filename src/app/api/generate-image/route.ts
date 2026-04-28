@@ -334,10 +334,13 @@ Restore smooth gradients, clean edges, accurate colors. Do not preserve any of t
 
   let step1Image: { data: string; mimeType: string } | null = null;
   let step1Text = "";
+  // 마지막 실패 원인을 잡아서 502 메시지에 surface (rate limit / safety / no-image 구분 위해)
+  let lastFailReason = "";
+  let lastFailKind: "ratelimit" | "safety" | "no_image" | "http" | "exception" | "" = "";
 
   for (const model of IMAGE_MODELS) {
     const url = `${GEMINI_BASE}/${model}:generateContent?key=${apiKey}`;
-    console.log(`[image-gen] Step1 시도: ${model} (${step1AspectRatio})`);
+    console.log(`[image-gen][${reqId}] Step1 시도: ${model} (${step1AspectRatio})`);
 
     try {
       const geminiRes = await fetchWithTimeout(url, {
@@ -357,14 +360,30 @@ Restore smooth gradients, clean edges, accurate colors. Do not preserve any of t
 
       if (!geminiRes.ok) {
         const errText = await geminiRes.text();
-        console.error(`[image-gen] ${model} HTTP 실패:`, geminiRes.status, errText.slice(0, 300));
+        console.error(`[image-gen][${reqId}] ${model} HTTP 실패:`, geminiRes.status, errText.slice(0, 300));
+        if (geminiRes.status === 429) {
+          lastFailKind = "ratelimit";
+          lastFailReason = `429 rate limit (${model})`;
+        } else {
+          lastFailKind = "http";
+          lastFailReason = `HTTP ${geminiRes.status} (${model})`;
+        }
         continue;
       }
 
       const data = await geminiRes.json();
       const candidate = data.candidates?.[0]?.content?.parts;
       if (!candidate) {
-        console.error(`[image-gen] ${model}: empty candidate`);
+        // safety filter 응답은 candidate가 비어있고 finishReason="SAFETY"
+        const finishReason = data.candidates?.[0]?.finishReason || "";
+        console.error(`[image-gen][${reqId}] ${model}: empty candidate, finishReason=${finishReason}`);
+        if (finishReason === "SAFETY" || finishReason === "PROHIBITED_CONTENT") {
+          lastFailKind = "safety";
+          lastFailReason = `safety filter (${finishReason})`;
+        } else {
+          lastFailKind = "no_image";
+          lastFailReason = `empty response${finishReason ? ` (${finishReason})` : ""}`;
+        }
         continue;
       }
 
@@ -380,11 +399,13 @@ Restore smooth gradients, clean edges, accurate colors. Do not preserve any of t
         | undefined;
 
       if (!imageData) {
-        console.error(`[image-gen] ${model}: no image in response, text:`, textPart?.text?.slice(0, 100));
+        console.error(`[image-gen][${reqId}] ${model}: no image in response, text:`, textPart?.text?.slice(0, 100));
+        lastFailKind = "no_image";
+        lastFailReason = `텍스트만 응답 (${model})`;
         continue;
       }
 
-      console.log(`[image-gen] ${model}: Step1 성공!`);
+      console.log(`[image-gen][${reqId}] ${model}: Step1 성공!`);
       step1Image = {
         data: imageData.data,
         mimeType: (imageData.mimeType || imageData.mime_type) as string,
@@ -392,17 +413,25 @@ Restore smooth gradients, clean edges, accurate colors. Do not preserve any of t
       step1Text = textPart?.text || "";
       break;
     } catch (e) {
-      console.error(`[image-gen] ${model} 예외:`, e);
+      const msg = e instanceof Error ? e.message : "unknown";
+      console.error(`[image-gen][${reqId}] ${model} 예외:`, e);
+      lastFailKind = "exception";
+      lastFailReason = msg;
       continue;
     }
   }
 
   if (!step1Image) {
-    console.error(`[image-gen][${reqId}] FAIL all models, mode=${mode} variation=${variation ?? 0}`);
-    return NextResponse.json(
-      { error: `이미지 생성 실패 (mode=${mode}, variation=${variation ?? 0}). 두 모델 모두 응답에 이미지가 없었어요.` },
-      { status: 502 }
-    );
+    console.error(`[image-gen][${reqId}] FAIL all models, mode=${mode} variation=${variation ?? 0}, kind=${lastFailKind}, reason=${lastFailReason}`);
+    let userMsg: string;
+    if (lastFailKind === "ratelimit") {
+      userMsg = `Gemini rate limit (429). 잠시 후 다시 시도해주세요.`;
+    } else if (lastFailKind === "safety") {
+      userMsg = `안전 필터에 걸렸어요 (${lastFailReason}). 다른 표현으로 다시 시도해주세요.`;
+    } else {
+      userMsg = `이미지 생성 실패 (${lastFailKind || "unknown"}: ${lastFailReason || "이유 미상"}, mode=${mode}/v${variation ?? 0}).`;
+    }
+    return NextResponse.json({ error: userMsg }, { status: lastFailKind === "ratelimit" ? 429 : 502 });
   }
 
   // 주제부 파이프라인이 아니면 (edit/enhance) Step 1 결과를 바로 반환
