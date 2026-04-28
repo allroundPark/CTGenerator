@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import {
   CTContent,
   BgTreatment,
@@ -31,6 +31,11 @@ export function useCardPools() {
   const [selSub, setSelSub] = useState(0);
   const [selImage, setSelImage] = useState(0);
 
+  // appendToPool에서 variants[0]의 스타일을 기본값으로 캐싱.
+  // addImageToPool이 textColor/bgTreatment를 안 넘기는 경로(첨부 enhance 등)에서
+  // 합성 시 그라데이션 누락되는 버그 방지용 안전망.
+  const defaultStyleRef = useRef<{ textColor: "BK" | "WT"; bgTreatment: BgTreatment } | null>(null);
+
   const hasContent = copyPool.length > 0;
 
   // 현재 선택 조합 → CTContent
@@ -54,6 +59,28 @@ export function useCardPools() {
   // 풀에 variants 추가 (첫 생성)
   const appendToPool = useCallback(
     (variants: CTContent[], imageUrl?: string) => {
+      // 첫 variant의 스타일을 default로 캐싱 — 이후 addImageToPool이 undefined를 넘겨도 합성에 반영됨
+      const wasDefaultEmpty = defaultStyleRef.current === null;
+      if (variants[0]) {
+        defaultStyleRef.current = {
+          textColor: variants[0].textColor || "WT",
+          bgTreatment: variants[0].bgTreatment || { type: "none" },
+        };
+
+        // race: variants보다 먼저 들어와서 type:"none"으로 박힌 이미지가 있으면 새 default로 patch.
+        // 첫 default 세팅 시에만 — 이후엔 사용자가 직접 none으로 바꿨을 수 있어서 안 건드림.
+        if (wasDefaultEmpty && variants[0].bgTreatment) {
+          const newDefault = defaultStyleRef.current;
+          setImagePool((prev) =>
+            prev.map((img) =>
+              img.bgTreatment.type === "none"
+                ? { ...img, textColor: newDefault.textColor, bgTreatment: newDefault.bgTreatment }
+                : img,
+            ),
+          );
+        }
+      }
+
       const newCopies: CopyOption[] = variants.map((v) => ({
         label: v.label,
         titleLine1: v.titleLine1,
@@ -122,14 +149,18 @@ export function useCardPools() {
         generationVariation?: number;
       },
     ) => {
+      // 호출자가 안 넘기면 appendToPool에서 캐싱한 default로 fallback (그라데이션 누락 방지)
+      const resolvedTextColor = textColor ?? defaultStyleRef.current?.textColor ?? "WT";
+      const resolvedBg = bgTreatment ?? defaultStyleRef.current?.bgTreatment ?? { type: "none" };
+
       setImagePool((prev) => {
         const newIndex = prev.length;
         const next = [
           ...prev,
           {
             imageUrl,
-            textColor: textColor || "WT",
-            bgTreatment: bgTreatment || { type: "none" },
+            textColor: resolvedTextColor,
+            bgTreatment: resolvedBg,
             imageConstraint: {
               fit: "cover" as const,
               alignX: "center" as const,
@@ -154,6 +185,7 @@ export function useCardPools() {
     setSelCopy(0);
     setSelSub(0);
     setSelImage(0);
+    defaultStyleRef.current = null;
   }, []);
 
   // 스와이프 — setSelXxx를 setXxxPool updater 안에서 호출하면
