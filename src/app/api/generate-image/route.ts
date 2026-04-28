@@ -162,6 +162,14 @@ ${hint}
 
 YOU ARE GENERATING A BACKGROUND IMAGE. The output will have text overlaid on top later by the app.
 
+⚠️ ABSOLUTE NO-TEXT CONTRACT (NON-NEGOTIABLE — VIOLATING THIS BREAKS THE PRODUCT):
+- The output image MUST contain ZERO text. ZERO Korean characters. ZERO English letters. ZERO numbers. ZERO words.
+- ZERO text on signs, banners, posters, screens, papers, books, billboards, t-shirts, packaging — anywhere.
+- ZERO logos that contain readable text. Pure abstract icons OK; brand wordmarks NOT OK.
+- Even if the input has prominent text — REMOVE IT ALL. Do NOT preserve it. Do NOT recreate it. Do NOT translate it.
+- Even if the text seems decorative or important — REMOVE IT. Text is added separately on top by the app.
+- If you generate ANY readable text in the output, the entire image is unusable. This is the most important rule.
+
 STEP 1 — STRIP EVERYTHING:
 - The input is likely a card screenshot. It has text, borders, rounded corners, hearts, icons overlaid.
 - You MUST produce a CLEAN background with ZERO text, ZERO UI elements, ZERO borders.
@@ -186,6 +194,13 @@ DO NOT add any new objects, decorative elements, waveforms, particles, or effect
     // 첨부 이미지 보정 모드 — 프리셋 없이 보정 전용 프롬프트
     fullPrompt = `You are enhancing a user-provided image for use as a 1:1 square card background. The output will be exported at 3x resolution (1005×1044px WebP), so maximum sharpness and detail is critical.
 
+⚠️ ABSOLUTE NO-TEXT CONTRACT (NON-NEGOTIABLE — VIOLATING THIS BREAKS THE PRODUCT):
+- The output image MUST contain ZERO text. ZERO Korean characters. ZERO English letters. ZERO numbers. ZERO words.
+- ZERO text on signs, banners, posters, screens, papers, books, billboards, t-shirts, packaging — anywhere.
+- If the input image contains text — REMOVE IT during enhancement. Replace with smooth background continuation.
+- Even logos with readable text must be removed or replaced with pure abstract icons.
+- Text is added separately on top by the app. Any text in the output makes the image unusable.
+
 TASK:
 - Enhance the attached image to high quality and extend it to fit a 1:1 square aspect ratio
 - Position the main subject (focal object) so its center sits at approximately the lower 1/3 of the image (around 66% from top). The upper 2/3 is where text overlays will go
@@ -195,7 +210,7 @@ TASK:
 
 DO NOT:
 - Do NOT add any new objects, elements, or details that are not already in the original image
-- Do NOT add text, logos, watermarks, or UI elements
+- Do NOT add or preserve any text, logos with text, watermarks, or UI elements (see NO-TEXT CONTRACT above)
 - Do NOT change or reinterpret the subject — if something is ambiguous, leave it as-is
 - Do NOT fill empty space with concrete new objects — use only simple background continuation (solid color, sky, bokeh, blur)
 - Do NOT change the original mood, color palette, or atmosphere
@@ -219,6 +234,25 @@ User context: ${prompt}`;
     useSubjectPipeline = true;
     fullPrompt = buildImagePrompt(prompt, imageType, copyContext, externalBrand, variation, true);
     console.log(`[image-gen] subject pipeline Step1, imageType=${imageType || "default"}, variation=${variation ?? 0}, prompt length=${fullPrompt.length}`);
+  }
+
+  // 레퍼런스 이미지가 있을 때 — 화면을 다시 찍은 사진일 가능성 → 모아레/픽셀패턴/스캔라인/
+  // JPEG 압축 artifact 제거 지시. edit/enhance/default 어느 모드든 동일하게 적용.
+  const hasRefImages = referenceImages && Array.isArray(referenceImages) && referenceImages.length > 0;
+  if (hasRefImages) {
+    fullPrompt += `
+
+REFERENCE IMAGE CLEANUP (CRITICAL):
+The reference image may have been photographed off a screen (LCD/monitor) or be a low-quality capture.
+AGGRESSIVELY remove these in the output:
+- Moire patterns (interference patterns from photographing pixel grids)
+- Visible pixel grids, sub-pixel RGB stripes, scan lines
+- Color banding in gradients
+- JPEG compression blocks / mosquito noise around edges
+- Glare, reflections, or color cast from the screen
+- ANY text, logos with words, watermarks, or UI elements visible in the reference (see NO-TEXT CONTRACT)
+The output must look like an ORIGINAL clean high-quality image, NOT a re-photographed screen.
+Restore smooth gradients, clean edges, accurate colors. Do not preserve any of these artifacts.`;
   }
 
   const parts: Array<Record<string, unknown>> = [{ text: fullPrompt }];
