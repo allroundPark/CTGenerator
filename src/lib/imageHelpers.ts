@@ -42,6 +42,24 @@ export async function fileToResizedBase64(
   });
 }
 
+/**
+ * API 전송용 자동 압축. Gemini 요청 한도(~20MB) 회피.
+ * - 작은 파일(<1MB)은 원본 그대로 base64 (품질 보존)
+ * - 큰 파일은 max 1600px + JPEG 0.85로 리사이즈
+ *
+ * iPhone 사진은 보통 4~12MB라 자동으로 압축 경로 탐.
+ */
+export async function compressForApi(
+  file: File,
+): Promise<{ data: string; mimeType: string }> {
+  const SMALL_THRESHOLD = 1_000_000; // 1MB
+  if (file.size < SMALL_THRESHOLD) {
+    const data = await fileToBase64(file);
+    return { data, mimeType: file.type || "image/jpeg" };
+  }
+  return fileToResizedBase64(file, 1600);
+}
+
 export async function imageUrlToBase64(
   url: string,
 ): Promise<{ data: string; mimeType: string } | null> {

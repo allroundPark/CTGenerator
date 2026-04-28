@@ -8,7 +8,7 @@
 import { Intent } from "@/types/intent";
 import { CTContent } from "@/types/ct";
 import { generateParallelImages } from "@/lib/orchestrate";
-import { fileToBase64, imageUrlToBase64 } from "@/lib/imageHelpers";
+import { compressForApi, imageUrlToBase64 } from "@/lib/imageHelpers";
 import { DispatchDeps, DispatchResult } from "./types";
 
 type EditImageIntent = Extract<Intent, { type: "edit_image" }>;
@@ -51,8 +51,7 @@ export async function dispatchEditImage(
 
     if (intent.operation === "enhance") {
       showStatus("첨부 이미지 보정 중...");
-      const b64 = await fileToBase64(attached.file);
-      const refData = [{ data: b64, mimeType: attached.file.type || "image/jpeg" }];
+      const refData = [await compressForApi(attached.file)];
       const results = await generateParallelImages(
         text || "이 이미지로 카드 만들어줘",
         composite,
@@ -122,7 +121,7 @@ async function singleImage(
   errors: string[],
 ): Promise<string> {
   try {
-    const base64 = await fileToBase64(attachedImg.file);
+    const compressed = await compressForApi(attachedImg.file);
     const prompt =
       mode === "reference"
         ? `${text}. 첨부된 이미지의 스타일과 분위기를 참고해서 새로운 이미지를 생성해줘.`
@@ -132,7 +131,7 @@ async function singleImage(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         prompt,
-        referenceImages: [{ data: base64, mimeType: attachedImg.file.type }],
+        referenceImages: [compressed],
         imageType: variant.imageType || "",
         copyContext: {
           nm1_label: variant.label,

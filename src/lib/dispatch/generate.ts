@@ -8,7 +8,7 @@ import { Intent } from "@/types/intent";
 import { BrandContext, CTContent } from "@/types/ct";
 import { searchBrand, generateText, generateParallelImages } from "@/lib/orchestrate";
 import { getKnownBrandContext } from "@/lib/imagePrompt";
-import { fileToBase64, fileToResizedBase64 } from "@/lib/imageHelpers";
+import { fileToBase64, compressForApi } from "@/lib/imageHelpers";
 import { DispatchDeps, DispatchResult } from "./types";
 
 type GenerateIntent = Extract<Intent, { type: "generate" }>;
@@ -41,6 +41,8 @@ export async function dispatchGenerate(
       return runTextOnly(intent, deps, merged.brand, promptText);
     case "attached_apply":
       return runAttachedApply(intent, deps, promptText);
+    case "attached_verbatim":
+      return runAttachedVerbatim(intent, deps);
     case "attached_edit":
       return runAttachedEdit(intent, deps, promptText);
     case "attached_reference":
@@ -165,8 +167,8 @@ async function runAttachedApply(
   }
 
   showStatus("이미지 보정 & 문구 생성 중...");
-  const b64 = await fileToBase64(applyImg.file);
-  const applyImageData = { data: b64, mimeType: applyImg.file.type || "image/jpeg" };
+  // 큰 파일은 자동 압축 (iPhone 사진 등). Gemini 한도(~20MB) 안에서 안전.
+  const applyImageData = await compressForApi(applyImg.file);
   const refData = [applyImageData];
 
   // 보정 이미지 3안 병렬 시작 — onEach로 한 장씩 풀에 추가
@@ -201,15 +203,23 @@ async function runAttachedApply(
     );
   })();
 
-  // OCR로 문구 추출 시도
+  // OCR로 문구 추출 시도 — 결과를 채팅에 surface (모바일 콘솔 못 보는 케이스 대응)
   const ocrResult = await tryOcr(applyImageData, apiFetch);
   let variants: CTContent[];
   if (ocrResult?.label || ocrResult?.titleLine1) {
     const ocrVariant = ocrToVariant(ocrResult);
     const ocrContext = `${ocrResult.label || ""} ${ocrResult.titleLine1 || ""} ${ocrResult.titleLine2 || ""}`.trim();
+    chat.addMessage({
+      role: "assistant",
+      content: `이미지에서 이렇게 읽었어요: "${ocrContext}". 첫 번째 문구로 그대로 두고, 비슷한 톤으로 변형도 같이 만들어 드릴게요.`,
+    });
     const more = await generateText(ocrContext, null, apiFetch).catch(() => []);
     variants = [ocrVariant, ...more];
   } else {
+    chat.addMessage({
+      role: "assistant",
+      content: "이미지에서 글자를 정확히 못 읽었어요. AI가 이미지를 보고 새 문구를 만들었는데, 마음에 안 드시면 \"유지하면서 [원하는 문구]로 만들어줘\" 식으로 다시 알려주세요.",
+    });
     const fallback = `첨부된 이미지를 분석해서 이 이미지에 어울리는 카드 문구를 만들어줘. 유저 요청: ${intent.promptSource.freeText}`;
     variants = await generateText(fallback, null, apiFetch);
   }
@@ -260,7 +270,7 @@ async function runAttachedEdit(
   try {
     showStatus("이미지 분석 & 수정 중...");
     const imgErrors: string[] = [];
-    const resized = await fileToResizedBase64(editImg.file, 1024);
+    const resized = await compressForApi(editImg.file);
     const refData = [resized];
 
     // editVariants는 OCR 결과에 따라 달라지므로 ref로 capture
@@ -362,8 +372,7 @@ async function runAttachedReference(
   pools.appendToPool(variants);
 
   showStatus("이미지 1/3 생성 중...");
-  const b64 = await fileToBase64(refImg.file);
-  const refData = [{ data: b64, mimeType: refImg.file.type }];
+  const refData = [await compressForApi(refImg.file)];
 
   const imgErrors: string[] = [];
   let generatedCount = 0;
@@ -401,6 +410,74 @@ async function runAttachedReference(
 
   reportCompletion(deps, generatedCount, imgErrors);
   return { ok: generatedCount > 0 };
+}
+
+// ── attached_verbatim: 첨부 이미지·텍스트 그대로 보존 ──
+// "유지/그대로/똑같이" 같은 발화일 때. 보정·AI 변형 둘 다 안 함.
+// 실패 시 유저에게 직접 입력 요청.
+async function runAttachedVerbatim(
+  intent: GenerateIntent,
+  deps: DispatchDeps,
+): Promise<DispatchResult> {
+  const { pools, chat, showStatus, apiFetch, log } = deps;
+  const applyImg =
+    intent.attachedImages?.find((i) => i.option === "apply") ||
+    intent.attachedImages?.[0];
+  if (!applyImg) {
+    chat.addMessage({ role: "assistant", content: "첨부된 이미지를 찾을 수 없어요." });
+    return { ok: false };
+  }
+
+  showStatus("이미지에서 글자 읽는 중...");
+  // OCR 호출용은 압축본 (Gemini 한도 회피). 디스플레이용은 원본 그대로 (verbatim 약속).
+  const compressedForOcr = await compressForApi(applyImg.file);
+  const originalDataUrl = await fileToBase64(applyImg.file);
+
+  const ocrResult = await tryOcr(compressedForOcr, apiFetch);
+
+  log({
+    message: intent.promptSource.freeText,
+    intent: "verbatim",
+    attached_images_count: 1,
+    ocr_success: !!(ocrResult?.label || ocrResult?.titleLine1),
+  });
+
+  if (!ocrResult?.label && !ocrResult?.titleLine1) {
+    // OCR 실패 — 카드 만들지 않고 유저에게 텍스트 입력 요청
+    showStatus("");
+    chat.addMessage({
+      role: "assistant",
+      content:
+        "이미지에서 글자를 못 읽었어요. 사용하실 문구를 직접 알려주실 수 있을까요?\n예: \"제목: ___, 부제: ___\" 또는 그냥 한 줄로 적어주셔도 됩니다.",
+    });
+    return { ok: false };
+  }
+
+  // OCR 성공 — 원본 텍스트 + 원본 이미지 그대로 카드 1장
+  const ocrVariant = ocrToVariant(ocrResult);
+  const ocrPreview = `${ocrResult.label || ""} ${ocrResult.titleLine1 || ""} ${ocrResult.titleLine2 || ""}`.trim();
+  chat.addMessage({
+    role: "assistant",
+    content: `이미지에서 이렇게 읽었어요: "${ocrPreview}". 그대로 카드 만들어 드릴게요.`,
+  });
+
+  pools.appendToPool([ocrVariant]);
+
+  // 이미지: Gemini 호출 없이 첨부 파일 원본을 data URL로 바로 사용 (변형 없음)
+  const imageDataUrl = `data:${applyImg.file.type || "image/jpeg"};base64,${originalDataUrl}`;
+  pools.addImageToPool(imageDataUrl, ocrVariant.textColor, ocrVariant.bgTreatment, {
+    generationPrompt: intent.promptSource.freeText,
+    generationStyle: "realistic",
+    generationVariation: 0,
+  });
+
+  showStatus("완성! (그대로 보존 모드)");
+  chat.addMessage({
+    role: "assistant",
+    content: "원본 이미지·문구 그대로 카드 만들었어요. 다른 게 필요하시면 알려주세요.",
+    showReport: true,
+  });
+  return { ok: true };
 }
 
 // ── 공통: OCR ──

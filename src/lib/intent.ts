@@ -71,17 +71,22 @@ async function classifyWithImages(
   }
 
   // 카드가 없으면: 첫 생성. 어떤 inputMode인지 결정.
-  // 텍스트의 "수정" 의도 신호로 attached_edit vs attached_apply를 갈라줌
-  // (옛 handleFirstGeneration의 isImageEdit 분기를 inputMode 결정으로 통합).
+  // 우선순위:
+  //   1) "그대로/유지" 의도 + apply → verbatim (AI 변형 없음)
+  //   2) "수정/바꿔" 의도 + apply → attached_edit
+  //   3) ref/edit 첨부 옵션 → 그대로 매핑
+  //   4) 기본: attached_apply (보정 + 변형)
   let inputMode: GenerateInputMode;
+  const wantsVerbatim = text ? looksLikeVerbatim(text) : false;
+  const wantsEdit = text ? looksLikeImageEdit(text) : false;
   if (refImg) {
     inputMode = "attached_reference";
   } else if (editImg) {
     inputMode = "attached_edit";
   } else if (applyImg) {
-    // text가 이미지 수정 의도를 강하게 시사하면 apply 대신 edit 경로로 (텍스트 제거 + 재생성)
-    const wantsEdit = text ? looksLikeImageEdit(text) : false;
-    inputMode = wantsEdit ? "attached_edit" : "attached_apply";
+    if (wantsVerbatim) inputMode = "attached_verbatim";
+    else if (wantsEdit) inputMode = "attached_edit";
+    else inputMode = "attached_apply";
   } else {
     inputMode = "attached_apply";
   }
@@ -116,7 +121,7 @@ async function classifyWithImages(
 
 // ── 수정 경로 ──
 async function classifyModification(input: ClassifyInput): Promise<ClassifyResult> {
-  const { text, contentSpec } = input;
+  const { text } = input;
   const extracted = await callExtractSpec(input);
   if (!extracted.ok) return extracted;
 
@@ -322,6 +327,12 @@ function heuristicEditIntent(userMessage: string): Intent {
 
 function looksLikeImageEdit(text: string): boolean {
   return /바꿔|변경|수정|톤|밝게|어둡게|색감|분위기|초록|파란|빨간|노란|보라|핑크/.test(text);
+}
+
+// "원본 이미지·텍스트 그대로 사용" 의도 — verbatim 모드 트리거.
+// looksLikeImageEdit과 충돌할 수 있는데, 우선순위는 분류기에서 verbatim 먼저 체크.
+function looksLikeVerbatim(text: string): boolean {
+  return /유지|그대로|똑같이|원본|이미지의|사진의|있는 ?그대로|preserve|verbatim/i.test(text);
 }
 
 function inferMissing(

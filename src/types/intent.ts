@@ -3,10 +3,11 @@
 
 import { AttachedImage, BrandContext, CTContent } from "./ct";
 
-// 첫 생성에서 이미지가 어떻게 들어오는지 — 실행 경로가 다른 4가지 케이스를 명시
+// 첫 생성에서 이미지가 어떻게 들어오는지 — 실행 경로가 다른 5가지 케이스를 명시
 export type GenerateInputMode =
   | "text"               // 텍스트만 → 표준 3안 생성
-  | "attached_apply"     // 첨부 이미지 보정 후 사용
+  | "attached_apply"     // 첨부 이미지 보정 후 사용 (AI 텍스트 변형 함께)
+  | "attached_verbatim"  // 첨부 이미지·텍스트 그대로 보존 (보정/변형 없음)
   | "attached_edit"      // 첨부 이미지 수정 (텍스트 제거 + OCR + 재생성)
   | "attached_reference"; // 첨부 이미지를 스타일 참고용으로
 
