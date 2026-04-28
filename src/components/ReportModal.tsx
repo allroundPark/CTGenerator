@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import { CTContent } from "@/types/ct";
-import { supabase } from "@/lib/supabase";
-import { getDeviceId } from "@/lib/deviceId";
+import { appendReport } from "@/lib/localLog";
 
 interface ReportModalProps {
   content: CTContent;
@@ -20,8 +19,7 @@ export default function ReportModal({ content, onClose, rating }: ReportModalPro
     if (!memo.trim()) return;
     setSubmitting(true);
     try {
-      const { error } = await supabase.from("ct_reports").insert({
-        device_id: getDeviceId(),
+      const ok = appendReport({
         card_state: {
           label: content.label,
           titleLine1: content.titleLine1,
@@ -35,11 +33,9 @@ export default function ReportModal({ content, onClose, rating }: ReportModalPro
         },
         user_memo: memo,
         rating: rating ?? null,
-        resolved: false,
       });
 
-      if (error) {
-        console.error("Report insert error:", error);
+      if (!ok) {
         alert("리포트 저장에 실패했습니다.");
       } else {
         setDone(true);

@@ -8,8 +8,7 @@ import ReportModal from "@/components/ReportModal";
 import ApiKeySetup from "@/components/ApiKeySetup";
 import { exportCtPng, exportCtBase64 } from "@/lib/exportPng";
 import { loadKey, hasStoredKey, isWorkingGroup, clearKey } from "@/lib/apiKey";
-import { supabase } from "@/lib/supabase";
-import { getDeviceId } from "@/lib/deviceId";
+import { appendReport } from "@/lib/localLog";
 import { useOrchestrate } from "@/hooks/useOrchestrate";
 
 export default function Home() {
@@ -233,29 +232,23 @@ export default function Home() {
     finally { setEmailSending(false); }
   };
 
-  // ── 퀵 레이팅 ──
+  // ── 퀵 레이팅 (localStorage) ──
   const handleQuickRate = useCallback(async (_msgId: string, rating: "good" | "bad"): Promise<boolean> => {
-    try {
-      const { error } = await supabase.from("ct_reports").insert({
-        device_id: getDeviceId(),
-        card_state: {
-          label: orch.composite.label,
-          titleLine1: orch.composite.titleLine1,
-          titleLine2: orch.composite.titleLine2,
-          subLine1: orch.composite.subLine1,
-          subLine2: orch.composite.subLine2,
-          textColor: orch.composite.textColor,
-          bgTreatment: orch.composite.bgTreatment,
-          imageType: orch.composite.imageType,
-          imageUrl: orch.composite.imageUrl?.startsWith("data:") ? "(base64 생성 이미지)" : orch.composite.imageUrl,
-        },
-        rating,
-        user_memo: "",
-        resolved: false,
-      });
-      if (error) { console.error("Quick rate error:", error); return false; }
-      return true;
-    } catch { return false; }
+    return appendReport({
+      card_state: {
+        label: orch.composite.label,
+        titleLine1: orch.composite.titleLine1,
+        titleLine2: orch.composite.titleLine2,
+        subLine1: orch.composite.subLine1,
+        subLine2: orch.composite.subLine2,
+        textColor: orch.composite.textColor,
+        bgTreatment: orch.composite.bgTreatment,
+        imageType: orch.composite.imageType,
+        imageUrl: orch.composite.imageUrl?.startsWith("data:") ? "(base64 생성 이미지)" : orch.composite.imageUrl,
+      },
+      rating,
+      user_memo: "",
+    });
   }, [orch.composite]);
 
   // ── 렌더링 ──

@@ -1,15 +1,15 @@
 import { describe, it, expect, vi } from "vitest";
 import {
-  extractSpec,
-  classifyByDiff,
   searchBrand,
   generateText,
   generateParallelImages,
   suggestField,
   suggestContent,
 } from "@/lib/orchestrate";
-import { EMPTY_SPEC } from "@/types/ct";
 import type { CTContent } from "@/types/ct";
+
+// NOTE: extractSpec / classifyByDiff는 lib/intent.ts로 이동.
+// 의도 분류 테스트는 src/__tests__/intent.test.ts 참고 (작성 예정).
 
 // ── Helper: mock apiFetch ──
 function mockApiFetch(responseBody: unknown, ok = true) {
@@ -20,85 +20,8 @@ function mockApiFetch(responseBody: unknown, ok = true) {
   });
 }
 
-// ── extractSpec ──
-describe("extractSpec", () => {
-  it("정상 추출: brand와 content를 반환", async () => {
-    const apiFetch = mockApiFetch({ extracted: { brand: "스타벅스", content: "음료 할인" } });
-    const result = await extractSpec("스타벅스 음료 할인 카드 만들어줘", EMPTY_SPEC, apiFetch);
-    expect(result).toEqual({ brand: "스타벅스", content: "음료 할인" });
-    expect(apiFetch).toHaveBeenCalledOnce();
-  });
-
-  it("빈 추출: 발화에서 아무것도 추출 안 됨", async () => {
-    const apiFetch = mockApiFetch({ extracted: {} });
-    const result = await extractSpec("안녕하세요", EMPTY_SPEC, apiFetch);
-    expect(result).toEqual({});
-  });
-
-  it("API 에러 시 빈 객체 반환", async () => {
-    const apiFetch = vi.fn().mockRejectedValue(new Error("network error"));
-    const result = await extractSpec("test", EMPTY_SPEC, apiFetch);
-    expect(result).toEqual({});
-  });
-
-  it("extracted가 없는 응답 시 빈 객체 반환", async () => {
-    const apiFetch = mockApiFetch({});
-    const result = await extractSpec("test", EMPTY_SPEC, apiFetch);
-    expect(result).toEqual({});
-  });
-});
-
-// ── classifyByDiff ──
-describe("classifyByDiff", () => {
-  it("brand 변경 → new", () => {
-    expect(classifyByDiff({ brand: "대한항공" }, "대한항공으로 바꿔줘")).toBe("new");
-  });
-
-  it("content 변경 → new", () => {
-    expect(classifyByDiff({ content: "마일리지 적립" }, "마일리지 적립으로")).toBe("new");
-  });
-
-  it("imageStyle 변경 → image", () => {
-    expect(classifyByDiff({ imageStyle: "3D" }, "3D로 바꿔줘")).toBe("image");
-  });
-
-  it("imageSource 변경 → image", () => {
-    expect(classifyByDiff({ imageSource: "ai" }, "AI로 만들어")).toBe("image");
-  });
-
-  it("textTone 변경 → copy", () => {
-    expect(classifyByDiff({ textTone: "감성적" }, "감성적으로")).toBe("copy");
-  });
-
-  it("textDraft 변경 → copy", () => {
-    expect(classifyByDiff({ textDraft: "새 초안" }, "초안 입력")).toBe("copy");
-  });
-
-  it("빈 extracted + 이미지 키워드 → image (키워드 fallback)", () => {
-    expect(classifyByDiff({}, "밝게 해줘")).toBe("image");
-    expect(classifyByDiff({}, "배경 바꿔")).toBe("image");
-    expect(classifyByDiff({}, "톤 조절해줘")).toBe("image");
-  });
-
-  it("빈 extracted + 하단 키워드 → sub", () => {
-    expect(classifyByDiff({}, "하단 문구 바꿔")).toBe("sub");
-    expect(classifyByDiff({}, "아래 텍스트 수정")).toBe("sub");
-  });
-
-  it("빈 extracted + 문구 키워드 → copy", () => {
-    expect(classifyByDiff({}, "제목 바꿔줘")).toBe("copy");
-    expect(classifyByDiff({}, "카피 수정해줘")).toBe("copy");
-  });
-
-  it("빈 extracted + 키워드 없음 → image (기본값)", () => {
-    expect(classifyByDiff({}, "좀 더 좋게")).toBe("image");
-  });
-
-  it("여러 필드 변경 시 우선순위: brand > imageStyle > textTone", () => {
-    expect(classifyByDiff({ brand: "새브랜드", imageStyle: "실사" }, "")).toBe("new");
-    expect(classifyByDiff({ imageStyle: "실사", textTone: "감성적" }, "")).toBe("image");
-  });
-});
+// extractSpec / classifyByDiff 테스트는 lib/intent.ts 이전과 함께 제거됨.
+// 새 분류기에 대한 테스트는 src/__tests__/intent.test.ts에서 작성 (별도 PR).
 
 // ── searchBrand ──
 describe("searchBrand", () => {

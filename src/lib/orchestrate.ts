@@ -1,11 +1,13 @@
-// Orchestrate — API 호출 순수 함수 + classifyByDiff
-// page.tsx에서 추출. 내부에서 fetch() 직접 사용 (Vitest에서 글로벌 mock).
+// Orchestrate — 외부 API 호출 순수 함수들.
+// 옛 extractSpec / orchestrate / classifyByDiff는 lib/intent.ts로 이동.
+// 의도 분류와 관련된 거짓말(catch → "generate" fallback)은 제거됨.
 
-import { ContentSpec, CTContent, BrandContext } from "@/types/ct";
+import { CTContent, BrandContext } from "@/types/ct";
 
 type ApiFetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 
-// ── fetchWithTimeout: 타임아웃 래퍼 (서버 사이드에 45초 타임아웃이 있으므로 클라이언트는 넉넉하게) ──
+// 타임아웃 래퍼 (서버 사이드에 45초 타임아웃이 있으므로 클라이언트는 넉넉하게).
+// 실제 timeout 구현은 후속 PR (AbortController 도입). 현재는 pass-through.
 async function fetchWithTimeout(
   apiFetch: ApiFetchFn,
   url: string,
@@ -13,89 +15,6 @@ async function fetchWithTimeout(
   _timeoutMs = 60000,
 ): Promise<Response> {
   return apiFetch(url, init);
-}
-
-// ── extract-spec: 유저 발화에서 필드 추출 + 실행 판단 ──
-export type ExtractAction = "generate" | "edit_image" | "edit_copy" | "edit_sub" | "need_info";
-
-export interface ExtractResult {
-  extracted: Partial<ContentSpec>;
-  action: ExtractAction;
-  question: string | null;
-}
-
-export async function extractSpec(
-  message: string,
-  currentSpec: ContentSpec,
-  apiFetch: ApiFetchFn,
-): Promise<ExtractResult> {
-  try {
-    const res = await fetchWithTimeout(apiFetch, "/api/extract-spec", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, currentSpec }),
-    });
-    const data = await res.json();
-    return {
-      extracted: data.extracted || {},
-      action: data.action || "generate",
-      question: data.question || null,
-    };
-  } catch {
-    return { extracted: {}, action: "generate", question: null };
-  }
-}
-
-// ── orchestrate: 의도 파악 + 브랜드 검색 + 문구 생성을 1개 HTTP 연결로 ──
-export interface OrchestrateResult extends ExtractResult {
-  brandContext: BrandContext | null;
-  variants: CTContent[];
-}
-
-export async function orchestrate(
-  message: string,
-  currentSpec: ContentSpec,
-  apiFetch: ApiFetchFn,
-): Promise<OrchestrateResult> {
-  try {
-    const res = await fetchWithTimeout(apiFetch, "/api/orchestrate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, currentSpec }),
-    });
-    const data = await res.json();
-    return {
-      extracted: data.extracted || {},
-      action: data.action || "generate",
-      question: data.question || null,
-      brandContext: data.brandContext || null,
-      variants: data.variants || [],
-    };
-  } catch {
-    return { extracted: {}, action: "generate", question: null, brandContext: null, variants: [] };
-  }
-}
-
-// ── classifyByDiff: extract-spec 결과로 의도 분류 (classify-intent 대체) ──
-export function classifyByDiff(
-  extracted: Partial<ContentSpec>,
-  userMessage: string,
-): "image" | "copy" | "sub" | "new" | "all" {
-  const fields = Object.keys(extracted);
-
-  // brand/content 변경 → 새 주제
-  if (fields.includes("brand") || fields.includes("content")) return "new";
-  // 이미지 관련 필드 변경
-  if (fields.includes("imageStyle") || fields.includes("imageSource")) return "image";
-  // 텍스트 관련 필드 변경
-  if (fields.includes("textTone") || fields.includes("textDraft")) return "copy";
-
-  // fallback: 키워드 기반 (기존 classify-intent의 규칙을 클라이언트에)
-  if (/이미지|사진|그림|밝게|어둡게|톤|배경|색감|캐릭터|분위기|크게|작게/.test(userMessage)) return "image";
-  if (/하단|서브|아래/.test(userMessage)) return "sub";
-  if (/문구|카피|제목|라벨|타이틀|짧게|길게|바꿔|수정/.test(userMessage)) return "copy";
-
-  return "image"; // 안전한 기본값 (기존과 동일)
 }
 
 // ── searchBrand: 브랜드 웹 검색 ──
@@ -141,13 +60,17 @@ export async function generateText(
   return data.variants as CTContent[];
 }
 
-// ── generateParallelImages: 이미지 N장 병렬 생성 (통합) ──
+// ── generateParallelImages: 이미지 N장 생성 ──
+// NOTE: 이름과 다르게 실제로는 순차. Chrome 동시 연결 6개 제한 회피용.
+// 정확한 이름(generateImagesSequential)으로 rename은 후속 PR.
 export interface ImageGenOpts {
   count?: number;
   enhance?: boolean;
   edit?: boolean;
   originalPrompt?: string;
   referenceImages?: { data: string; mimeType: string }[];
+  /** 각 이미지가 완료되는 시점에 호출 — UI에 1장씩 점진적으로 보여주기 위함 */
+  onEach?: (index: number, total: number, imageUrl: string | null) => void;
 }
 
 export async function generateParallelImages(
@@ -161,11 +84,11 @@ export async function generateParallelImages(
   const count = opts.count ?? 3;
 
   // 순차 생성: Chrome 동시 연결 제한(6개) 회피 + 새로고침 항상 가능
-  // 첫 이미지가 빨리 보이고, 나머지는 순차적으로 추가
   const results: (string | null)[] = [];
   for (let i = 0; i < count; i++) {
     const result = await generateSingleImage(prompt, variant, brandContext, i, opts, apiFetch, errors);
     results.push(result);
+    opts.onEach?.(i, count, result);
   }
   return results;
 }
