@@ -86,12 +86,28 @@ async function classifyWithImages(
     inputMode = "attached_apply";
   }
 
+  // text가 있으면 brand/content best-effort 추출 — 수정 단계에서 컨텍스트 이어가기 위함.
+  // 실패해도 OK (fail-open으로 generate 진행).
+  let extractedBrand: string | undefined;
+  let extractedContent: string | undefined;
+  if (text) {
+    const ex = await callExtractSpec(input);
+    if (ex.ok) {
+      extractedBrand = (ex.fields.brand as string | null | undefined) ?? undefined;
+      extractedContent = (ex.fields.content as string | null | undefined) ?? undefined;
+    }
+  }
+
   return {
     ok: true,
     intent: {
       type: "generate",
       inputMode,
-      promptSource: { freeText: text || "이 이미지로 카드 만들어줘" },
+      promptSource: {
+        brand: extractedBrand,
+        content: extractedContent,
+        freeText: text || "이 이미지로 카드 만들어줘",
+      },
       brandSearch: "skip",
       attachedImages: images,
     },
@@ -104,7 +120,7 @@ async function classifyModification(input: ClassifyInput): Promise<ClassifyResul
   const extracted = await callExtractSpec(input);
   if (!extracted.ok) return extracted;
 
-  const { action, fields, question } = extracted;
+  const { action, fields } = extracted;
 
   // 명시적 action이 있으면 그대로 신뢰 — LLM이 "이건 이미지 수정"이라고 했으면 따름
   if (action === "edit_image") {
@@ -124,15 +140,11 @@ async function classifyModification(input: ClassifyInput): Promise<ClassifyResul
   if (action === "edit_sub") {
     return { ok: true, intent: { type: "edit_sub", instruction: text } };
   }
+  // 카드가 이미 있는데 서버가 need_info를 요청하면 — 대화 컨텍스트 끊는 UX 안 좋음.
+  // 수정 의도가 명확하지 않더라도 휴리스틱으로 영역 추정 (image가 안전한 default).
+  // need_info는 첫 생성에서만 의미 있음 (classifyFirstGeneration이 처리).
   if (action === "need_info") {
-    return {
-      ok: true,
-      intent: {
-        type: "need_info",
-        missing: inferMissing(contentSpec, fields),
-        question: question || "어떤 정보를 알려주실까요?",
-      },
-    };
+    return { ok: true, intent: heuristicEditIntent(text) };
   }
 
   // generate: 수정 경로에서 generate가 나왔다는 건 "주제 변경" → 새 카드
