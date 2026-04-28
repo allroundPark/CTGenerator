@@ -191,8 +191,17 @@ If input is not square, OUTPAINT (extend background) to make square. NEVER crop.
 DO NOT add any new objects, decorative elements, waveforms, particles, or effects that weren't in the original.`;
     console.log(`[image-gen] edit mode, prompt length=${fullPrompt.length}`);
   } else if (enhance) {
-    // 첨부 이미지 보정 모드 — 프리셋 없이 보정 전용 프롬프트
+    // 첨부 이미지 보정 모드 — variation별 살짝 다른 방향
+    const enhanceVariationHints = [
+      "Variation: clean faithful enhancement. Subtle quality boost — sharper edges, cleaner colors, more detail. Composition and framing UNCHANGED. Highest fidelity to input.",
+      "Variation: subject focus emphasis. Same content, but slightly tighter perceptual focus on the main subject — make the focal object feel more prominent (subtly stronger shadow grounding, slightly softer/blurrier background context, more contrast separation between subject and surroundings). Do NOT crop or zoom; achieve focus via lighting and depth cues only.",
+      "Variation: premium refinement. Same subject and composition, but elevate the presentation — softer light falloff, subtly richer mid-tones, slightly deeper shadows, marginally more saturated key colors. Feels expensive and polished. Do NOT add new objects.",
+    ];
+    const enhanceHint = enhanceVariationHints[variation ?? 0] || enhanceVariationHints[0];
+
     fullPrompt = `You are enhancing a user-provided image for use as a 1:1 square card background. The output will be exported at 3x resolution (1005×1044px WebP), so maximum sharpness and detail is critical.
+
+${enhanceHint}
 
 ⚠️ ABSOLUTE NO-TEXT CONTRACT (NON-NEGOTIABLE — VIOLATING THIS BREAKS THE PRODUCT):
 - The output image MUST contain ZERO text. ZERO Korean characters. ZERO English letters. ZERO numbers. ZERO words.
